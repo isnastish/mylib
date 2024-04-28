@@ -35,13 +35,4 @@ namespace ml
         char *m_data{nullptr};
         size_t m_size;
     };
-
-    template<class T>
-    concept string_convertible = std::convertible_to<T, const char *>;
-
-    // TODO: Experiment with templates and concepts instead of overloads
-    // template<class T, class K>
-    String operator+(const String&a, const String& b);
-    String operator+(const char *a, const String& b);
-    String operator+(const String& a, const char *b);
 } // namespace ml
