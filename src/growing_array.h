@@ -1,9 +1,20 @@
+// TODO:
+// [X] Replace malloc with VirtualAlloc or HeapAlloc 
+// [x] Implement insert functions.
+// [ ] emplace
+// [ ] Test erasing the elements using const_iterator 
+
 #pragma once
 
 #include <initializer_list>
 #include <utility> // std::move
 #include <algorithm> // std::max
 #include <cassert>
+#include <iostream>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #define ml_max(a, b) ((a) > (b) ? (a) : (b))
 
@@ -16,7 +27,8 @@ public:
     using iterator = Object*;
     using const_iterator = const Object*;
 
-    explicit GrowingArray(size_t cap=16);
+    GrowingArray();
+    explicit GrowingArray(size_t cap);
     GrowingArray(std::initializer_list<Object> list);
     ~GrowingArray();
 
@@ -32,16 +44,28 @@ public:
     void pop_back();
     bool grow(size_t cap);
     
-    iterator erase(iterator place);
+    iterator erase(iterator pos);
     iterator erase(iterator first, iterator second);
-    iterator erase(const_iterator place);
+
+    // TODO: Implement
+    iterator erase(const_iterator pos);
     iterator erase(const_iterator first, const_iterator second);
 
-    iterator insert(iterator place, const Object& obj);
-    iterator insert(iterator place, Object&& obj);
-    iterator insert(iterator place, size_t count, const Object& obj);
-    iterator insert_range(iterator first, iterator last);
-    
+    iterator insert(const_iterator pos, const Object& obj);
+    iterator insert(const_iterator pos, Object&& obj);
+    iterator insert(const_iterator pos, size_t count, const Object& obj);
+
+    template<class Itr>
+    iterator insert(const_iterator pos, Itr first, Itr last)
+    {
+        auto count = std::abs(std::distance(first, last));
+        auto at = shift(pos, count);
+        for (auto itr = first; itr != last;)
+            *at++ = *itr++;
+        m_size += count;
+        return at;
+    }
+
     void flush(GrowingArray& other);
 
     void clear();
@@ -50,21 +74,27 @@ public:
     bool empty() const { return m_size == 0; }
     size_t left() const { return m_cap - m_size; }
 
-    iterator begin() { return m_data; }
-    iterator end() { return m_data + m_size; }
+    iterator begin() { return &m_data[0]; }
+    iterator end() { return &m_data[size()]; }
 
-    const_iterator begin() const { return m_data; }
-    const_iterator end() const { return m_data + m_size; }
+    const_iterator begin() const { return &m_data[0]; }
+    const_iterator end() const { return &m_data[size()]; }
 
 private:
+    GrowingArray<Object>::iterator shift(const_iterator pos, size_t count);
     Object* alloc_memory(size_t count);
     void free_memory(Object *memory);
-    void zero();
+    void zeroMembers();
+    bool shouldGrow(size_t count) const { return (m_size + count > m_cap); } 
 
     Object* m_data{nullptr};
     size_t m_size{0};
     size_t m_cap{0};
 };
+
+template<class Object>
+GrowingArray<Object>::GrowingArray()
+{}
 
 template<class Object>
 GrowingArray<Object>::GrowingArray(size_t cap)
@@ -80,7 +110,7 @@ GrowingArray<Object>::GrowingArray(std::initializer_list<Object> list)
 
 template<class Object>
 GrowingArray<Object>::~GrowingArray()
-{ delete []m_data; }
+{ free_memory(m_data); }
 
 template<class Object>
 GrowingArray<Object>::GrowingArray(const GrowingArray<Object>& rhs)
@@ -106,7 +136,7 @@ GrowingArray<Object>& GrowingArray<Object>::operator=(const GrowingArray<Object>
 }
 
 template<class Object>
-void GrowingArray<Object>::zero()
+void GrowingArray<Object>::zeroMembers()
 {
     m_size = 0; 
     m_cap = 0; 
@@ -118,7 +148,7 @@ GrowingArray<Object>::GrowingArray(GrowingArray&& rhs)
 : m_size(rhs.m_size), 
 m_cap(rhs.m_cap),
 m_data(rhs.m_data)
-{ rhs.zero(); }
+{ rhs.zeroMembers(); }
 
 template<class Object>
 GrowingArray<Object>& GrowingArray<Object>::operator=(GrowingArray&& rhs)
@@ -129,7 +159,7 @@ GrowingArray<Object>& GrowingArray<Object>::operator=(GrowingArray&& rhs)
     m_size = rhs.m_size;
     m_cap = rhs.m_cap;
     m_data = rhs.m_data;
-    rhs.zero();
+    rhs.zeroMembers();
     return *this;
 }
 
@@ -137,21 +167,31 @@ template<class Object>
 Object* GrowingArray<Object>::alloc_memory(size_t count)
 {
     size_t alloc_size = count*sizeof(Object);
+#ifdef _WIN32
+    void *memory = VirtualAlloc(0, alloc_size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+#else
     void* memory = malloc(alloc_size);
     memset(memory, 0, alloc_size);
+#endif
     return static_cast<Object*>(memory);
 }
 
 template<class Object>
 void GrowingArray<Object>::free_memory(Object *memory)
-{ free(memory); zero(); }
+{
+#ifdef _WIN32
+    VirtualFree((LPVOID)memory, 0, MEM_RELEASE);
+#else
+    free(memory);  
+#endif 
+    zeroMembers(); 
+}
 
 template<class Object>
 void GrowingArray<Object>::push_back(const Object& obj)
 {
-    if (m_size == m_cap)
+    if (shouldGrow(1))
     {
-        // TODO: Figure out the problem with std::max
         auto cap = ml_max(16, m_cap << 2); 
         grow(cap);
     }
@@ -161,7 +201,7 @@ void GrowingArray<Object>::push_back(const Object& obj)
 template<class Object>
 void GrowingArray<Object>::push_back(Object&& obj)
 {
-    if (m_size == m_cap)
+    if (shouldGrow(1))
     {
         auto cap = ml_max(16, m_cap << 2);
         grow(m_cap << 2);
@@ -173,14 +213,14 @@ template<class Object>
 const Object& GrowingArray<Object>::back() const
 {
     assert(m_size > 0);
-    return static_cast<const Object&>(*(m_data + m_size - 1));
+    return m_data[m_size - 1];
 }
 
 template<class Object>
 const Object& GrowingArray<Object>::front() const
 {
     assert(m_size > 0);
-    return static_cast<const Object&>(m_data[0]);
+    return m_data[0];
 }
 
 template<class Object>
@@ -200,7 +240,7 @@ bool GrowingArray<Object>::grow(size_t cap)
     Object* data = alloc_memory(cap);
     if (m_data != nullptr)
         memcpy(data, m_data, m_size*sizeof(Object));
-    free(m_data);
+    free_memory(m_data);
     m_data = data;
     m_cap = cap;
     return true;
@@ -214,28 +254,23 @@ void GrowingArray<Object>::clear()
     m_size = 0;
 }
 
-// end() iterator cannot be used
-// returns the element following the one being removed
 template<class Object>
-GrowingArray<Object>::iterator GrowingArray<Object>::erase(iterator place) 
+GrowingArray<Object>::iterator GrowingArray<Object>::erase(iterator pos) 
 {
-    assert(place >= begin() && place < end());
-    auto next = place;
+    assert(pos >= begin() && pos < end());
+    auto next = pos;
     for (; next != (end() - 1); next++)
         *next = *(next + 1);
-    // memset(next, 0, sizeof(Object));
     m_size--;
-    return place;
+    return pos;
 }
 
-// erase all the elements starting from first up to last, but not inclusively
 template<class Object>
 GrowingArray<Object>::iterator GrowingArray<Object>::erase(iterator first, iterator last)
 {
-    // TODO: Zero the memory
     assert((first >= begin() && first <= end()) &&
     (last >= begin() && last <= end()));
-    size_t erase_size = last - first;
+    size_t erase_size = std::distance(first, last);
     for (auto at = last; at != end();)
         *first++ = *at++;
     m_size -= erase_size;
@@ -243,40 +278,64 @@ GrowingArray<Object>::iterator GrowingArray<Object>::erase(iterator first, itera
 }
 
 template<class Object>
-GrowingArray<Object>::iterator GrowingArray<Object>::erase(const_iterator place)
+GrowingArray<Object>::iterator GrowingArray<Object>::erase(const_iterator first, const_iterator last)
 {
-
+    assert((first >= begin() && first <= end()) &&
+    (last >= begin() && last <= end()));
+    size_t erase_size = std::distance(first, last);
+    auto erase_at = const_cast<iterator>(first); // Does it have to be a const_cast?
+    for (auto at = last; at != end();)
+        *erase_at++ = *at++;
+    m_size -= erase_size;
+    return first;
 }
 
 template<class Object>
-GrowingArray<Object>::iterator GrowingArray<Object>::erase(const_iterator first, const_iterator second)
+GrowingArray<Object>::iterator GrowingArray<Object>::insert(const_iterator pos, const Object& obj)
 {
-
+    auto at = shift(pos, 1);
+    *at = obj;
+    m_size++;
+    return at;
 }
 
 template<class Object>
-GrowingArray<Object>::iterator GrowingArray<Object>::insert(iterator place, const Object& obj)
+GrowingArray<Object>::iterator GrowingArray<Object>::insert(const_iterator pos, Object&& obj)
 {
-
-}
-
-// return 
-template<class Object>
-GrowingArray<Object>::iterator GrowingArray<Object>::insert(iterator place, Object&& obj)
-{
-
+    auto at = shift(pos,  1);
+    *at = std::move(obj);
+    m_size++;
+    return at;
 }
 
 template<class Object>
-GrowingArray<Object>::iterator GrowingArray<Object>::insert(iterator place, size_t count, const Object& obj)
+GrowingArray<Object>::iterator GrowingArray<Object>::insert(const_iterator pos, size_t count, const Object& obj)
 {
-
+    auto at = shift(pos, count);
+    for (size_t i = 0; i < count; i++)
+        *at++ = obj;
+    m_size += count;
+    return at;
 }
 
 template<class Object>
-GrowingArray<Object>::iterator GrowingArray<Object>::insert_range(iterator first, iterator last)
+GrowingArray<Object>::iterator GrowingArray<Object>::shift(const_iterator pos, size_t count)
 {
-
+    assert(pos >= begin() && pos <= end());
+    if (shouldGrow(count))
+        grow(ml_max(m_size + count, m_cap << 2));
+    auto at = const_cast<iterator>(pos);
+    if (std::distance(at + count, end()) < 0)
+    {   
+        for (auto itr = at; itr != end(); itr++)
+            std::swap(*itr, *(itr + count));
+    }
+    else
+    {
+        for (auto itr = end() - 1; itr >= at; itr--)
+            std::swap(*itr, *(itr + count));
+    }
+    return at;
 }
 
 } // namespace ml

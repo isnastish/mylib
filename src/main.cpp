@@ -2,61 +2,83 @@
 #include "growing_array.h"
 #include <iostream>
 #include <vector>
+#include <string>
 
 using namespace std;
 
-template<class T>
-static void _display(const char *arr_name, const ml::GrowingArray<T>& arr) 
+template<class Container>
+static void _display(const char *arr_name, const Container& arr) 
 {
     cout << arr_name << ": {";
-    for(auto itr = arr.begin(); itr != arr.end(); itr++) 
+    for(auto itr = arr.begin(); itr != arr.end(); itr++)
+    {
         cout << *itr << ", ";
+    } 
     cout << "};" << endl;
 }
 #define display(arr) _display(#arr, arr)
 
-static void test_string()
-{
-    ml::String s1("my string");
-    cout << s1 << endl;
-}
-
 static void test_growing_array()
 {
-    ml::GrowingArray<int> arr = {2334, 978, 8878};
-    cout << "size: " << arr.size() << endl;
-    display(arr);
-    cout << arr.back() << endl;
-    arr.pop_back();
-    cout << "size: " << arr.size() << endl;
-    arr.push_back(444);
-    arr.push_back(89);
-    arr.push_back(-3434);
-    display(arr);
-    cout << "size: " << arr.size() << endl;
-    auto next = arr.erase(arr.begin());
-    cout << "after erasing: ";
-    display(arr);
-    cout << "next: " << *next << endl;
-    // TODO: Try to erase on empty array.
-    arr.erase(arr.begin(), arr.begin() + 3);
-    cout << "after erasing three elements: ";
-    display(arr);
-    cout << "size: " << arr.size() << endl;
-}
+    {
+        ml::GrowingArray<ml::String> s;
+        s.grow(64);
+        cout << "size: " << s.size() << endl;
+        cout << "cap: " << s.capacity() << endl; 
+        s.push_back(ml::String("my first element"));
+        display(s);
+        auto itr = s.erase(s.begin());
+        cout << "size: " << s.size() << endl;
+        cout << *itr << endl;
+        display(s);
 
-static void test_std_vector()
-{
-    std::vector<int> v{4};
-    // __debugbreak();
+        s.insert(s.begin(), ml::String("newly inserted string"));
+        display(s);
+        s.insert(s.begin(), ml::String("before begin"));
+        display(s);
+        s.insert(s.end(), ml::String("at the end"));
+        display(s);
+        cout << "s.size: " << s.size() << endl;
+        // insert in the middle
+        ml::String obj("in the middle");
+        s.insert(s.begin() + 1, obj);
+        display(s);
+        cout << "s.size: " << s.size() << endl;
+
+        // insert before end()
+        s.insert(s.end(), 3, ml::String("copy"));
+        cout << "s.size: " << s.size() << endl;
+        display(s);
+
+        // insert before begin()
+        s.insert(s.begin(), 4, ml::String("4 copies"));
+        cout << "s.size: " << s.size() << endl;
+        display(s);
+
+        s.insert(s.begin() + 2, 2, ml::String("MIDDLE"));
+        cout << "s.size: " << s.size() << endl;
+        display(s);
+
+        // insert 5 elements starting from end() - 2
+        s.insert(s.end() - 2, 5, ml::String("Last"));
+        display(s);
+        cout << "s.size: " << s.size() << endl;
+
+        std::vector<ml::String> vstr;
+        enum { N = 5 };
+        vstr.reserve(N);
+        for(int i = 0; i < N; i++)
+            vstr.push_back(ml::String("index" + std::to_string(i)));
+
+        s.insert(s.begin(), vstr.begin(), vstr.end());
+        cout << "s.size: " << s.size() << endl;
+        display(s);
+    }
 }
 
 int main(int argc_count, char **argv)
 {
-    test_string();
     test_growing_array();
-    test_std_vector();
-
     return 0;
 }
 
