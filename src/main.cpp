@@ -1,5 +1,5 @@
-#include "string.h"
-#include "growing_array.h"
+#include "./containers/string.h"
+#include "./containers/growing_array.h"
 #include <iostream>
 #include <vector>
 #include <string>

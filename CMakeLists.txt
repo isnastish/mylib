@@ -8,13 +8,55 @@ project("growing_array")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+# Build a static container library
+add_library(
+    containers_lib
+    STATIC
+    "./src/containers/string.cpp"
+    "./src/containers/string.h"
+    "./src/containers/growing_array.h"
+    "./src/containers/hash_map.h"
+    "./src/containers/set.h"
+    "./src/containers/linked_list.h"
+    "./src/containers/dequeue.h"
+)
+
+target_include_directories(
+    containers_lib
+    PUBLIC
+        "./src"
+)
+
 add_executable(
     growing_array
     "./src/main.cpp"
-    "./src/string.cpp"
-    "./src/string.h"
-    "./src/growing_array.h"
-    "./src/hash_map.h"
-    "./src/set.h"
-    "./src/linked_list.h"
+)
+
+target_link_libraries(
+    growing_array
+    PUBLIC
+        containers_lib
+)
+
+add_subdirectory("./ext/googletest/")
+
+add_executable(
+    test_containers
+    "./test/test_growing_array.cpp"
+    "./test/timer.h"
+    "./test/timer.cpp"
+)
+
+target_link_libraries(
+    test_containers
+    PUBLIC
+        containers_lib
+        gtest
+        gtest_main
+)
+
+include(GoogleTest)
+
+gtest_discover_tests(
+    test_containers
 )

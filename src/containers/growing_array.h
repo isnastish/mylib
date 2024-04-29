@@ -2,7 +2,10 @@
 // [X] Replace malloc with VirtualAlloc or HeapAlloc 
 // [x] Implement insert functions.
 // [x] emplace
-// [ ] Test erasing the elements using const_iterator 
+// [x] Overloaded operator[]
+// [x] Test erasing the elements using const_iterator 
+// [ ] const_iterator and iterator as a class
+// [ ] Figure out whether we can dereference end() iterator inside std::vector
 
 #pragma once
 
@@ -24,6 +27,9 @@ template<class Object>
 class GrowingArray
 {
 public:
+    class ConstIterator;
+    class Iterator;
+
     using iterator = Object*;
     using const_iterator = const Object*;
 
@@ -91,7 +97,7 @@ public:
     const_iterator end() const { return &m_data[size()]; }
 
 private:
-    GrowingArray<Object>::iterator shift(const_iterator pos, size_t count);
+    iterator shift(const_iterator pos, size_t count);
     Object* alloc_memory(size_t count);
     void free_memory(Object *memory);
     void zeroMembers();
@@ -101,6 +107,54 @@ private:
     size_t m_size{0};
     size_t m_cap{0};
 };
+
+/*************************************************************************
+* Experimenting with const_iterator and iterator begin classes rather than pointers.
+* Once the implementation is stable, all iterators inside GrowingArray will be replaced 
+* with custom ConstIterator and Iterator classes.
+* But for now they are not in use anywhere!!!
+*************************************************************************/
+template<class Object>
+class GrowingArray<Object>::ConstIterator
+{
+public:
+    ConstIterator operator++()
+    {
+        assert(m_at + 1 <= end());
+        ++m_at;
+        return *this;
+    }
+
+    ConstIterator operator++(int unused_)
+    {
+        assert(m_at + 1 <= end());
+        auto res = *this;
+        ++(*this);
+        return res;
+    }
+
+    // ConstIterator operat[]
+
+    const Object& operator*()
+    {
+        assert(m_at >= begin() && m_at < end()); 
+        return *m_at;
+    }
+
+protected:
+    Object *m_at;
+    // TODO: Maintain a flag
+    // bool is_valid;
+    // friend class GrowingArray<Object>;
+};
+
+template<class Object>
+class GrowingArray<Object>::Iterator : public ConstIterator
+{
+public:
+};
+
+/*************************************************************************/
 
 template<class Object>
 GrowingArray<Object>::GrowingArray()
@@ -214,7 +268,7 @@ void GrowingArray<Object>::push_back(Object&& obj)
     if (shouldGrow(1))
     {
         auto cap = ml_max(16, m_cap << 2);
-        grow(m_cap << 2);
+        grow(cap);
     }
     m_data[m_size++] = std::move(obj);
 }
@@ -247,6 +301,7 @@ bool GrowingArray<Object>::grow(size_t cap)
 {
     if (cap <= m_cap)
         return false;
+    for(; (cap & (cap - 1)) != 0; cap++); 
     Object* data = alloc_memory(cap);
     if (m_data != nullptr)
         memcpy(data, m_data, m_size*sizeof(Object));
