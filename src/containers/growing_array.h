@@ -186,24 +186,21 @@ m_cap(rhs.m_cap)
 }
 
 template<class Object>
-GrowingArray<Object>& GrowingArray<Object>::operator=(const GrowingArray<Object>& rhs)
-{
-    if (this == &rhs)
-        return *this;
+GrowingArray<Object>& GrowingArray<Object>::operator=(const GrowingArray<Object>& rhs) {
+    if (this == &rhs) return *this;
     Object* data = alloc_memory(rhs.m_cap);
     memcpy(data, rhs.m_data, rhs.m_size*sizeof(Object));
-    free_memory(m_data);
+    Object* tmp = m_data;
     m_size = rhs.m_size;
     m_cap = rhs.m_cap;
     m_data = data;
+    free_memory(tmp);
     return *this;
 }
 
 template<class Object>
-void GrowingArray<Object>::zeroMembers()
-{
-    m_size = 0; 
-    m_cap = 0; 
+void GrowingArray<Object>::zeroMembers() {
+    m_size = m_cap = 0; 
     m_data = nullptr;
 }
 
@@ -215,21 +212,19 @@ m_data(rhs.m_data)
 { rhs.zeroMembers(); }
 
 template<class Object>
-GrowingArray<Object>& GrowingArray<Object>::operator=(GrowingArray&& rhs)
-{
-    if (this == &rhs)
-        return *this;
-    free_memory(m_data);
+GrowingArray<Object>& GrowingArray<Object>::operator=(GrowingArray&& rhs) {
+    if (this == &rhs) return *this;
+    Object* tmp = m_data;
     m_size = rhs.m_size;
     m_cap = rhs.m_cap;
     m_data = rhs.m_data;
     rhs.zeroMembers();
+    free_memory(tmp);
     return *this;
 }
 
 template<class Object>
-Object* GrowingArray<Object>::alloc_memory(size_t count)
-{
+Object* GrowingArray<Object>::alloc_memory(size_t count) {
     size_t alloc_size = count*sizeof(Object);
 #ifdef _WIN32
     void *memory = VirtualAlloc(0, alloc_size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
@@ -241,8 +236,7 @@ Object* GrowingArray<Object>::alloc_memory(size_t count)
 }
 
 template<class Object>
-void GrowingArray<Object>::free_memory(Object *memory)
-{
+void GrowingArray<Object>::free_memory(Object *memory) {
 #ifdef _WIN32
     VirtualFree((LPVOID)memory, 0, MEM_RELEASE);
 #else
@@ -252,10 +246,8 @@ void GrowingArray<Object>::free_memory(Object *memory)
 }
 
 template<class Object>
-void GrowingArray<Object>::push_back(const Object& obj)
-{
-    if (shouldGrow(1))
-    {
+void GrowingArray<Object>::push_back(const Object& obj) {
+    if (shouldGrow(1)) {
         auto cap = ml_max(16, m_cap << 2); 
         grow(cap);
     }
@@ -263,10 +255,8 @@ void GrowingArray<Object>::push_back(const Object& obj)
 }
 
 template<class Object>
-void GrowingArray<Object>::push_back(Object&& obj)
-{
-    if (shouldGrow(1))
-    {
+void GrowingArray<Object>::push_back(Object&& obj) {
+    if (shouldGrow(1)) {
         auto cap = ml_max(16, m_cap << 2);
         grow(cap);
     }
@@ -274,22 +264,19 @@ void GrowingArray<Object>::push_back(Object&& obj)
 }
 
 template<class Object>
-const Object& GrowingArray<Object>::back() const
-{
+const Object& GrowingArray<Object>::back() const {
     assert(m_size > 0);
     return m_data[m_size - 1];
 }
 
 template<class Object>
-const Object& GrowingArray<Object>::front() const
-{
+const Object& GrowingArray<Object>::front() const {
     assert(m_size > 0);
     return m_data[0];
 }
 
 template<class Object>
-void GrowingArray<Object>::pop_back()
-{
+void GrowingArray<Object>::pop_back() {
     assert(m_size > 0);
     Object* start = (m_data + m_size - 1); 
     memset(start, 0, sizeof(Object));
