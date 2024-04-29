@@ -46,11 +46,19 @@ public:
         delete []tmp;
         return *this;
     }
+
+    void write(const char* data) {
+        size_t data_size = std::strlen(data);
+        assert(data_size <= size_);
+        memcpy(data_, data, data_size); // TODO: Use at pointer (advance at pointer here);
+    }
+
 private:
     void zero() { size_ = 0; data_ = nullptr; }
 
     size_t size_;
     uint8_t *data_;
+    uint8_t *at;
 };
 
 template<class Container>
@@ -96,6 +104,12 @@ TEST(GrowingArray, PushBack) {
 
 TEST(GrowingArray, PushBackLargeObject) {
     test::Timer time;
+    ml::GrowingArray<test::Blob> arr;
+    arr.grow(test::SIZE);
+    for (size_t i = 0; i < test::SIZE; i++) {
+        arr.push_back(test::Blob());
+    }
+    ASSERT_EQ(arr.size(), test::SIZE);
 }
 
 #undef Print

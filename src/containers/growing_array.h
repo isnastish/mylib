@@ -6,6 +6,7 @@
 // [x] Test erasing the elements using const_iterator 
 // [ ] const_iterator and iterator as a class
 // [ ] Figure out whether we can dereference end() iterator inside std::vector
+// [ ] Use custom Arena and pass it to array's ctor.
 
 #pragma once
 
