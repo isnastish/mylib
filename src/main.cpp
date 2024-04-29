@@ -73,6 +73,14 @@ static void test_growing_array()
         s.insert(s.begin(), vstr.begin(), vstr.end());
         cout << "s.size: " << s.size() << endl;
         display(s);
+
+        s.emplace(s.begin(), "string");
+        cout << "s.size: " << s.size() << endl;
+        display(s);
+
+        s.emplace(s.end(), std::string("Terminal element"));
+        cout << "s.size: " << s.size() << endl;
+        display(s);
     }
 }
 

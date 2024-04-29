@@ -1,7 +1,7 @@
 // TODO:
 // [X] Replace malloc with VirtualAlloc or HeapAlloc 
 // [x] Implement insert functions.
-// [ ] emplace
+// [x] emplace
 // [ ] Test erasing the elements using const_iterator 
 
 #pragma once
@@ -66,6 +66,13 @@ public:
         return at;
     }
 
+    template<class ...Args>
+    iterator emplace(const_iterator pos, Args&&...args)
+    {
+        return insert(pos, Object(std::forward<Args>(args)...));
+    } 
+
+    // TODO: Implement
     void flush(GrowingArray& other);
 
     void clear();
