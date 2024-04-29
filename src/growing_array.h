@@ -37,6 +37,9 @@ public:
     GrowingArray(GrowingArray&& rhs);
     GrowingArray& operator=(GrowingArray&& rhs);
 
+    const Object& operator[](int idx) const { assert(idx >= 0 && idx < size()); return m_data[idx]; }
+    Object& operator[](int idx) { assert(idx >= 0 && idx < size()); return m_data[idx]; }
+
     void push_back(const Object& obj);
     void push_back(Object&& obj);
     const Object& back() const;
@@ -267,7 +270,7 @@ GrowingArray<Object>::iterator GrowingArray<Object>::erase(iterator pos)
     assert(pos >= begin() && pos < end());
     auto next = pos;
     for (; next != (end() - 1); next++)
-        *next = *(next + 1);
+        std::swap(*next, *(next + 1));
     m_size--;
     return pos;
 }
@@ -289,7 +292,7 @@ GrowingArray<Object>::iterator GrowingArray<Object>::erase(const_iterator first,
 {
     assert((first >= begin() && first <= end()) &&
     (last >= begin() && last <= end()));
-    size_t erase_size = std::distance(first, last);
+    auto erase_size = std::distance(first, last);
     auto erase_at = const_cast<iterator>(first); // Does it have to be a const_cast?
     for (auto at = last; at != end();)
         *erase_at++ = *at++;

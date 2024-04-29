@@ -81,6 +81,13 @@ static void test_growing_array()
         s.emplace(s.end(), std::string("Terminal element"));
         cout << "s.size: " << s.size() << endl;
         display(s);
+
+        auto str = s[0];
+        cout << "str: " << str << endl;
+
+        // assignment by index
+        s[1] = ml::String("new string");
+        display(s);
     }
 }
 
