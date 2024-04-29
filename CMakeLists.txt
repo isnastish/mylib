@@ -12,13 +12,15 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_library(
     containers_lib
     STATIC
+    "./src/containers/growing_array.h"
+    "./src/containers/linked_list.h"
+    "./src/containers/hash_map.h"
     "./src/containers/string.cpp"
     "./src/containers/string.h"
-    "./src/containers/growing_array.h"
-    "./src/containers/hash_map.h"
-    "./src/containers/set.h"
-    "./src/containers/linked_list.h"
     "./src/containers/dequeue.h"
+    "./src/containers/set.h"
+    "./src/containers/queue.h"
+    "./src/containers/stack.h"
 )
 
 target_include_directories(
@@ -43,6 +45,7 @@ add_subdirectory("./ext/googletest/")
 add_executable(
     test_containers
     "./test/test_growing_array.cpp"
+    "./test/test_string.cpp"
     "./test/timer.h"
     "./test/timer.cpp"
 )
