@@ -21,6 +21,8 @@ add_library(
     "./src/containers/set.h"
     "./src/containers/queue.h"
     "./src/containers/stack.h"
+    "./src/containers/arena.h"
+    "./src/containers/arena.cpp"
 )
 
 target_include_directories(

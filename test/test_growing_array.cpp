@@ -10,54 +10,63 @@ namespace test
 {
 constexpr size_t SIZE = 4096;
 
+// TODO: Consider alignment as well.
+
 /*
 * Memory blob for testing
 */
 class Blob {
 public:
-    Blob(size_t size=256)
-    : size_(size), data_(new uint8_t[]{}){}
-    ~Blob() { delete []data_; }
+    Blob(size_t alloc_size=256, size_t allignment=4)
+    : cap(alloc_size), ptr(new uint8_t[]{}){}
+    ~Blob() { delete []ptr; }
 
     Blob(const Blob& rhs)
-    : size_(rhs.size_), data_(new uint8_t[]{})
-    { memcpy(data_, rhs.data_, rhs.size_); }
+    : cap(rhs.cap), ptr(new uint8_t[]{})
+    { memcpy(ptr, rhs.ptr, rhs.cap); }
     Blob& operator=(const Blob& rhs) { 
         if (this == &rhs) return *this;
-        uint8_t* new_data = new uint8_t[rhs.size_]{};
-        memcpy(new_data, rhs.data_, rhs.size_);
-        uint8_t* tmp = data_;
-        size_ = rhs.size_;
-        data_ = new_data;
+        uint8_t* new_data = new uint8_t[rhs.cap]{};
+        memcpy(new_data, rhs.ptr, rhs.cap);
+        uint8_t* tmp = ptr;
+        cap = rhs.cap;
+        ptr = new_data;
         delete []tmp;
         return *this;
     }
 
     Blob(Blob&& rhs)
-    : size_(rhs.size_), data_(rhs.data_) 
+    : cap(rhs.cap), ptr(rhs.ptr) 
     { zero(); }
 
     Blob& operator=(Blob&& rhs) {
         if (this == &rhs) return *this;
-        uint8_t* tmp = data_;
-        size_ = rhs.size_;
-        data_ = rhs.data_;
+        uint8_t* tmp = ptr;
+        cap = rhs.cap;
+        ptr = rhs.ptr;
         rhs.zero();
         delete []tmp;
         return *this;
     }
 
-    void write(const char* data) {
-        size_t data_size = std::strlen(data);
-        assert(data_size <= size_);
-        memcpy(data_, data, data_size); // TODO: Use at pointer (advance at pointer here);
+    bool grow(size_t new_cap) {
+        if (new_cap > cap) {
+            uint8_t *p = new uint8_t[new_cap]{};
+            auto copy_size = std::distance(at, ptr); 
+            memcpy(p, ptr, copy_size);
+            uint8_t *tmp = ptr;
+            ptr = p;
+            delete []tmp; // free the last.
+            return true;
+        }
+        return false;
     }
 
 private:
-    void zero() { size_ = 0; data_ = nullptr; }
+    void zero() { cap = 0; ptr = nullptr; }
 
-    size_t size_;
-    uint8_t *data_;
+    size_t cap;
+    uint8_t *ptr;
     uint8_t *at;
 };
 
