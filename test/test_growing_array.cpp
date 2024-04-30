@@ -52,7 +52,7 @@ public:
     bool grow(size_t new_cap) {
         if (new_cap > cap) {
             uint8_t *p = new uint8_t[new_cap]{};
-            auto copy_size = std::distance(at, ptr); 
+            auto copy_size = std::distance(ptr, pos);
             memcpy(p, ptr, copy_size);
             uint8_t *tmp = ptr;
             ptr = p;
@@ -67,7 +67,7 @@ private:
 
     size_t cap;
     uint8_t *ptr;
-    uint8_t *at;
+    uint8_t *pos;
 };
 
 template<class Container>

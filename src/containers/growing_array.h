@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "arena.h"
 #include <initializer_list>
 #include <utility> // std::move
 #include <algorithm> // std::max
@@ -107,6 +108,7 @@ private:
     Object* m_data{nullptr};
     size_t m_size{0};
     size_t m_cap{0};
+    MemoryArena *m_arena;
 };
 
 /*************************************************************************
