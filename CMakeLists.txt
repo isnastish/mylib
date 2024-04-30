@@ -50,6 +50,7 @@ add_executable(
     "./test/test_string.cpp"
     "./test/timer.h"
     "./test/timer.cpp"
+    "./test/test_arena.cpp"
 )
 
 target_link_libraries(
