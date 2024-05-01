@@ -11,6 +11,11 @@
 namespace ml
 {
 
+/**
+ * The memory arena maintains a list of all available chunks.
+ * If chunks is in used, it's assumed to have `InUse` state.
+ * If chunks is free, it has a corresponding `Free` state.
+*/
 enum class ChunkState : uint8_t {
     InUse,
     Free
@@ -28,7 +33,10 @@ public:
     uint64_t remaining() const { return m_size - m_pos; }
     
     /**
-     * 
+     * Push an object into the memory, incrementing the current position.
+     * Asserts if the current position plus size greater than memory size.
+     * @param obj An object to be inserted.
+     * @param size Object's size.
     */
     template<class Object>
     void push(const Object& obj, uint64_t size) {
@@ -38,7 +46,9 @@ public:
     }
 
     /**
-     * 
+     * The same as the function above, but the object is std::move(ed) into the memory.
+     * @param obj An object to be moved.
+     * @param size Object's size.
     */
     template<class Object>
     void push(Object&& obj, uint64_t size) {
@@ -48,17 +58,22 @@ public:
     }
 
     /**
-     * 
+     * Pop element from the memory by decrementing the position.
+     * Asserts if `m_pos` less than size.
+     * @param size Size of the previously inserted object.
     */
-    void pop(uint64_t size) { m_pos -= size; }
+    void pop(uint64_t size) { 
+        assert(m_pos >= size);
+        m_pos -= size;
+    }
 
     /**
-     * 
+     * @return Return a pointer to the beginning of the memory chunk. 
     */
     uint8_t* begin() { return m_start; }
 
     /**
-     * 
+     * @return Return a pointer to the end of already occupied memory. 
     */
     uint8_t* end() { return (m_start + m_pos); }
   
@@ -77,27 +92,41 @@ class MemoryArena {
     using ChunkPair = std::pair<MemoryChunk*, ChunkState>;
 public:
     /**
-     * 
+     * @param size A size to be allocated, by default it's 1Gib.
+     * @param align Alignment is currently disabled. 
     */
     MemoryArena(std::uint64_t size=ALLOC_SIZE, std::uint64_t align=4);
 
     /**
-     * 
+     * Releases the memory allocated during the construction.
     */
     ~MemoryArena();
 
+    /**
+     * Memory arenas can neither be copied nor moved.
+    */
     MemoryArena(const MemoryArena& rhs) = delete;
     MemoryArena& operator=(const MemoryArena& rhs) = delete;
     MemoryArena(MemoryArena&& rhs) = delete;
     MemoryArena& operator=(MemoryArena&& rhs) = delete;
 
     /**
-     * 
+     * Searches for a memory chunk of a sufficient size and returns it to the user.
+     * A chunk, passed as a first argument can either be extended to fit the size, 
+     * or put in the `Free`(ed) state, in which case it can be reused by someone else later, 
+     * and a new chunk will be returned.
+     * @note The function doesn't allocate or deallocate memory.
+     * @param chunk The current chunk which holds data.
+     * @param size A desired size, if supplied chunk is not NULL, the total size would be computed
+     * as a sum of the provided chunk plus size.
+     * @return A new MemoryChunk which has enough space to fit the desired size.
     */
-    MemoryChunk* get_memory_chunk(MemoryChunk *old_chunk, uint64_t size);
+    MemoryChunk* get_memory_chunk(MemoryChunk *chunk, uint64_t size);
 
     /**
-     * 
+     * Puts the supplied chunk into `Free`(ed) state so it can be used by others.
+     * @note Doesn't free any memory.
+     * @param chunk Chunk to be released.
     */
     void release_memory_chunk(MemoryChunk* chunk);
 
