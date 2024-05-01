@@ -1,12 +1,18 @@
 #include "arena.h"
 
+#ifdef _WIN32
+# define WIN32_LEAN_AND_MEAN
+# include <windows.h>
+# undef max
+# undef min
+#endif
+
 namespace ml
 {
 MemoryArena::MemoryArena(std::uint64_t size, std::uint64_t align) {
     uint64_t rem = size % align;
     uint64_t aligned_cap = size + (align - rem); 
-    uint8_t *mem = static_cast<uint8_t *>(malloc(aligned_cap));
-    std::memset(mem, 0, aligned_cap);
+    uint8_t *mem = static_cast<uint8_t *>(MemoryArena::alloc_memory(aligned_cap));
     m_ptr = mem;
     m_cap = aligned_cap;
     m_pos = 0;
@@ -14,11 +20,18 @@ MemoryArena::MemoryArena(std::uint64_t size, std::uint64_t align) {
 }
 
 MemoryArena::~MemoryArena() {
-    free(m_ptr);
+    MemoryArena::release_memory(m_ptr);
 }
 
 MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> lock(m_mutex);
+    // TODO: While searching for a chunk of appropriate size, we see that a chunk has Free state, 
+    // but not enough space, we can check the neighbouring chunk as well, and if it has Free state
+    // and sum of their sizes satisfies our needs, we can merge those two chunks together and 
+    // return a single, bigger chunk. This process can continue, so we can merge more than one chunk'
+    // which are located in a row.
+    // We would have to write a recursive (probably) function which looks ahead for chunks with a status Free
+    // Or maybe merge chunks only when could find a chunk of an appropriate size?
 
     // TODO: If right after the chunk comes m_pos, that means that we only have one chunk in a whole arena. 
     // And the chunk itself doesn't have enough memory, we have to extend the current chunk, 
@@ -26,13 +39,21 @@ MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size
     uint64_t new_size = (old_chunk == nullptr) ? size : (old_chunk->m_pos + size);
     uint64_t total_chunks = static_cast<uint64_t>((new_size / static_cast<float>(CHUNK_SIZE)) + 1);
     uint64_t total_size = total_chunks * CHUNK_SIZE;
-    auto itr = std::find_if(chunks.begin(), chunks.end(), 
+    if ((old_chunk != nullptr) && (m_pos == (old_chunk->m_size + sizeof(MemoryChunk)))) {
+        // Extend this chunk instead of creating a new one, so we don't waste a lot of memory on 
+        // storing MemoryChunk data structures.
+        assert((total_size + sizeof(MemoryChunk)) <= m_cap);
+        m_pos += (total_size - old_chunk->m_size);
+        old_chunk->m_size = total_size;
+        return old_chunk;
+    }
+    auto itr = std::find_if(m_chunks.begin(), m_chunks.end(),
     [total_size](std::pair<MemoryChunk*, ChunkState>& chunk) -> bool {
         if ((chunk.second == ChunkState::Free) && (chunk.first->m_size >= total_size))
             return true;
         return false;
     });
-    if (itr != chunks.end()) {
+    if (itr != m_chunks.end()) {
         MemoryChunk *chunk = itr->first;
         if (old_chunk != nullptr) {
             copy_chunk(chunk, old_chunk);
@@ -51,7 +72,7 @@ MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size
 
     m_pos += total_size;
 
-    chunks.push_back({chunk_ptr, ChunkState::InUse});
+    m_chunks.push_back({chunk_ptr, ChunkState::InUse});
 
     if (old_chunk != nullptr) {
         copy_chunk(chunk_ptr, old_chunk);
@@ -61,10 +82,10 @@ MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size
 }
 
 void MemoryArena::release_memory_chunk(MemoryChunk *chunk) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> lock(m_mutex);
 
     if (chunk != nullptr) {
-        std::pair<MemoryChunk*, ChunkState>* pair = chunk_pair(chunk);
+        ChunkPair* pair = chunk_pair(chunk);
         assert(pair != nullptr);
         pair->second = ChunkState::Free;
         pair->first->m_pos = 0;
@@ -72,22 +93,22 @@ void MemoryArena::release_memory_chunk(MemoryChunk *chunk) {
 }
 
 void MemoryArena::copy_chunk(MemoryChunk *new_chunk, MemoryChunk *old_chunk) {
-    std::pair<MemoryChunk*, ChunkState>* pair = chunk_pair(old_chunk);
+    ChunkPair* pair = chunk_pair(old_chunk);
     assert(pair != nullptr);
     std::memcpy(new_chunk->m_start, old_chunk->m_start, old_chunk->m_pos);
     pair->second = ChunkState::Free;
     pair->first->m_pos = 0;
 }
 
-std::pair<MemoryChunk*, ChunkState>* MemoryArena::chunk_pair(MemoryChunk *chunk) {
-    auto chunk_itr = std::find_if(chunks.begin(), chunks.end(), 
+MemoryArena::ChunkPair* MemoryArena::chunk_pair(MemoryChunk *chunk) {
+    auto chunk_itr = std::find_if(m_chunks.begin(), m_chunks.end(), 
     [chunk](const std::pair<MemoryChunk*, ChunkState>& pair) -> bool {
         if ((pair.first->m_start == chunk->m_start)
             && (pair.second == ChunkState::InUse))
             return true;
         return false;
     });
-    return (chunk_itr == chunks.end()) ? nullptr : &*chunk_itr; 
+    return (chunk_itr == m_chunks.end()) ? nullptr : &*chunk_itr; 
 }
 
 void MemoryArena::realloc(uint64_t size) {
@@ -102,6 +123,25 @@ void MemoryArena::realloc(uint64_t size) {
         m_cap = new_cap;
         delete[]tmp;
     }
+}
+
+void *MemoryArena::alloc_memory(uint64_t size) {
+#ifdef _WIN32
+    void *memory = VirtualAlloc(0, size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+#else
+    void *memory = malloc(size);
+    std::memset(memory, 0, size);
+#endif
+    assert(memory);
+    return memory;
+}
+
+void MemoryArena::release_memory(void *memory) {
+#ifdef _WIN32
+    VirtualFree(memory, 0, MEM_RELEASE);
+#else
+    free(memory);
+#endif
 }
 
 } // namespace ml

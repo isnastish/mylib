@@ -76,6 +76,8 @@ public:
         return (const_iterator)(m_chunk->end());
     }
 
+    // TODO: Overloaded operator[]
+
 private:
     ml::MemoryArena *m_arena;
     ml::MemoryChunk *m_chunk;
@@ -87,6 +89,8 @@ TEST(Arena, Creation) {
     ml::MemoryArena arena;
     GrowingArray<int32_t> arr(&arena);
     for (int i = 0; i < COUNT; i++) {
-        arr.push_back((i + 1) << 2);
+        arr.push_back(i); //(i + 1) << 2);
     }
+    ASSERT_EQ(arr.size(), COUNT);
+    print(arr);
 }

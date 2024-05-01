@@ -72,8 +72,9 @@ private:
 
 class MemoryArena {
     constexpr static uint64_t CHUNK_SIZE = 1024u;
-    constexpr static uint64_t ALLOC_SIZE{2*1024*1024u};
+    constexpr static uint64_t ALLOC_SIZE{1024*1024*1024u};
 
+    using ChunkPair = std::pair<MemoryChunk*, ChunkState>;
 public:
     /**
      * 
@@ -100,22 +101,19 @@ public:
     */
     void release_memory_chunk(MemoryChunk* chunk);
 
-    /**
-     * 
-    */
-    void realloc(uint64_t size);
-
 private:
+    static void *alloc_memory(uint64_t size);
+    static void release_memory(void *memory);
+    void realloc(uint64_t size);
     void copy_chunk(MemoryChunk* new_chunk, MemoryChunk* old_chunk);
-    std::pair<MemoryChunk*, ChunkState>* chunk_pair(MemoryChunk *chunk);
+    ChunkPair* chunk_pair(MemoryChunk *chunk);
 
     uint8_t *m_ptr;
     uint64_t m_pos;
     uint8_t  m_align;
     uint64_t m_cap;
-
-    std::list<std::pair<MemoryChunk*, ChunkState>> chunks;
-    std::mutex mutex;
+    std::list<ChunkPair> m_chunks;
+    std::mutex m_mutex;
 };
 
 } // namespace ml
