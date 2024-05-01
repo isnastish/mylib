@@ -3,10 +3,25 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
+#include <string>
 
-#define Print(arr) _print(#arr, arr)
+#define print(arr) _print(#arr, arr)
 
-// Is not thread-safe
+template<class Object> class GrowingArray;
+
+template<class T> 
+static void _print(const char *name, const GrowingArray<T>& arr) {
+    std::cout << name << ": {";
+    for (auto itr = arr.begin(); itr != arr.end(); itr++) {
+        if (itr == arr.end() - 1) {
+            std::cout << *itr;
+            break;
+        }
+        std::cout << *itr << ", ";
+    }
+    std::cout << "};" << std::endl;
+}
+
 template<class Object>
 class GrowingArray {
 public:
@@ -14,44 +29,64 @@ public:
     using const_iterator = const Object*;
 
     GrowingArray(ml::MemoryArena* arena)
-    : m_arena(arena), m_chunk(nullptr){}
+    : m_arena(arena), m_chunk(nullptr), m_size(0) {}
     ~GrowingArray() {
         m_arena->release_memory_chunk(m_chunk);
     }
 
     void push_back(const Object& obj) {
         uint64_t obj_size = sizeof(obj);
-        if (m_chunk == nullptr) {
-            m_chunk = m_arena->get_memory_chunk(nullptr, obj_size);
-        } else if (m_chunk->left() < obj_size) {
-            m_chunk = m_arena->get_memory_chunk(m_chunk, m_chunk->pos + obj_size);
+        if ((m_chunk == nullptr) || (m_chunk->remaining() < obj_size)) {
+            m_chunk = m_arena->get_memory_chunk(m_chunk, obj_size);
         }
+        m_chunk->push(obj, obj_size);
+        m_size++;
     }
 
     void push_back(Object&& obj) {
+        uint64_t obj_size = sizeof(obj);
+        if ((m_chunk == nullptr) || (m_chunk->remaining() < obj_size)) {
+            m_chunk = m_arena->get_memory_chunk(m_chunk, obj_size);
+        }
+        m_chunk->push(std::move(obj), obj_size);
+        m_size++;
+    }
 
+    void pop_back() {
+        assert(size() != 0);
+        m_chunk->pop();
+        m_size--;
+    }
+
+    size_t size() const { return m_size; }
+
+    iterator begin() { 
+        return (iterator)m_chunk->begin();
+    }
+
+    iterator end() {
+        return (iterator)m_chunk->end();
+    }
+
+    const_iterator begin() const {
+        return (const_iterator)(m_chunk->begin());
+    }
+
+    const_iterator end() const {
+        return (const_iterator)(m_chunk->end());
     }
 
 private:
     ml::MemoryArena *m_arena;
     ml::MemoryChunk *m_chunk;
+    size_t m_size;
 };
 
-// template<class T> 
-// static void _print(const char *name, const GrowingArray<T>& arr) {
-//     std::cout << name << ": {";
-//     for (auto itr = arr.begin(); itr != arr.end(); itr++) {
-//         if (itr == arr.end() - 1) {
-//             std::cout << *itr;
-//             break;
-//         }
-//         std::cout << *itr << ", ";
-//     }
-//     std::cout << "};" << std::endl;
-// }
-
 TEST(Arena, Creation) {
+    constexpr size_t COUNT = 1024*1024;
     ml::MemoryArena arena;
-
     GrowingArray<int32_t> arr(&arena);
+    for (int i = 0; i < COUNT; i++) {
+        arr.push_back((i + 1) << 2);
+    }
 }

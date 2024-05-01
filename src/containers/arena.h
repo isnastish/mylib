@@ -21,7 +21,47 @@ public:
     MemoryChunk(uint8_t *ptr, uint64_t size)
     : m_start(ptr), m_size(size), m_pos(0) {}
 
-    uint64_t left() const { return m_size - m_pos; }
+    /**
+     * Compute the size of the remaining space in a chunk.
+     * @return number of bytes remaining bytes.
+    */
+    uint64_t remaining() const { return m_size - m_pos; }
+    
+    /**
+     * 
+    */
+    template<class Object>
+    void push(const Object& obj, uint64_t size) {
+        assert((m_pos + size) <= m_size);
+        *(Object *)(m_start + m_pos) = obj;
+        m_pos += size;
+    }
+
+    /**
+     * 
+    */
+    template<class Object>
+    void push(Object&& obj, uint64_t size) {
+        assert((m_pos + size) <= m_size);
+        *(Object *)(m_start + m_pos) = std::move(obj);
+        m_pos += size;
+    }
+
+    /**
+     * 
+    */
+    void pop(uint64_t size) { m_pos -= size; }
+
+    /**
+     * 
+    */
+    uint8_t* begin() { return m_start; }
+
+    /**
+     * 
+    */
+    uint8_t* end() { return (m_start + m_pos); }
+  
 private:
     friend class MemoryArena;
 
@@ -35,7 +75,14 @@ class MemoryArena {
     constexpr static uint64_t ALLOC_SIZE{2*1024*1024u};
 
 public:
+    /**
+     * 
+    */
     MemoryArena(std::uint64_t size=ALLOC_SIZE, std::uint64_t align=4);
+
+    /**
+     * 
+    */
     ~MemoryArena();
 
     MemoryArena(const MemoryArena& rhs) = delete;
@@ -43,18 +90,18 @@ public:
     MemoryArena(MemoryArena&& rhs) = delete;
     MemoryArena& operator=(MemoryArena&& rhs) = delete;
 
-    /*
-    *
+    /**
+     * 
     */
     MemoryChunk* get_memory_chunk(MemoryChunk *old_chunk, uint64_t size);
 
-    /*
-    * 
+    /**
+     * 
     */
     void release_memory_chunk(MemoryChunk* chunk);
 
-    /*
-    *
+    /**
+     * 
     */
     void realloc(uint64_t size);
 

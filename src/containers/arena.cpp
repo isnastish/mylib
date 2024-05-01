@@ -20,8 +20,12 @@ MemoryArena::~MemoryArena() {
 MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size) {
     std::lock_guard<std::mutex> lock(mutex);
 
-    uint64_t total_chunks = static_cast<uint64_t>((size / static_cast<float>(CHUNK_SIZE)) + 1);
-    uint64_t total_size = total_chunks * CHUNK_SIZE; // data size?
+    // TODO: If right after the chunk comes m_pos, that means that we only have one chunk in a whole arena. 
+    // And the chunk itself doesn't have enough memory, we have to extend the current chunk, 
+    // rather than creating a new one.
+    uint64_t new_size = (old_chunk == nullptr) ? size : (old_chunk->m_pos + size);
+    uint64_t total_chunks = static_cast<uint64_t>((new_size / static_cast<float>(CHUNK_SIZE)) + 1);
+    uint64_t total_size = total_chunks * CHUNK_SIZE;
     auto itr = std::find_if(chunks.begin(), chunks.end(), 
     [total_size](std::pair<MemoryChunk*, ChunkState>& chunk) -> bool {
         if ((chunk.second == ChunkState::Free) && (chunk.first->m_size >= total_size))
@@ -39,11 +43,12 @@ MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size
     // NOTE: If this fails, we have to grow the arena, which would invalidate all the pointers.
     // Thus we cannot do the reallocation at this point in time.
     assert((total_size + sizeof(MemoryChunk)) <= (m_cap - m_pos));
-    
     MemoryChunk *chunk_ptr = reinterpret_cast<MemoryChunk *>(m_ptr + m_pos);
+    
+    m_pos += sizeof(MemoryChunk);
+
     *chunk_ptr = MemoryChunk(m_ptr + m_pos, total_size);
 
-    m_pos += sizeof(MemoryChunk);
     m_pos += total_size;
 
     chunks.push_back({chunk_ptr, ChunkState::InUse});
