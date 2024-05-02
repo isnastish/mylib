@@ -86,7 +86,7 @@ private:
 };
 
 class MemoryArena {
-    constexpr static uint64_t CHUNK_SIZE = 1024u;
+    constexpr static uint64_t PAGE_SIZE = 1024u;
     constexpr static uint64_t ALLOC_SIZE{1024*1024*1024u};
 
     using ChunkPair = std::pair<MemoryChunk*, ChunkState>;
@@ -135,7 +135,7 @@ private:
     static void release_memory(void *memory);
     void realloc(uint64_t size);
     void copy_chunk(MemoryChunk* new_chunk, MemoryChunk* old_chunk);
-    ChunkPair* chunk_pair(MemoryChunk *chunk);
+    ChunkPair* get_chunk_pair(MemoryChunk *chunk);
 
     uint8_t *m_ptr;
     uint64_t m_pos;
