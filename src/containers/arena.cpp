@@ -9,14 +9,14 @@
 
 namespace ml
 {
-MemoryArena::MemoryArena(std::uint64_t size, std::uint64_t align) {
-    uint64_t rem = size % align;
-    uint64_t aligned_cap = size + (align - rem); 
-    uint8_t *mem = static_cast<uint8_t *>(MemoryArena::alloc_memory(aligned_cap));
+MemoryArena::MemoryArena(std::uint64_t size) {
+    assert(size != 0);
+    if ((size % PAGE_SIZE) != 0)
+        size += PAGE_SIZE - (size % PAGE_SIZE); 
+    uint8_t *mem = static_cast<uint8_t *>(MemoryArena::alloc_memory(size));
     m_ptr = mem;
-    m_cap = aligned_cap;
+    m_cap = size;
     m_pos = 0;
-    m_align = align;
 }
 
 MemoryArena::~MemoryArena() {
@@ -37,11 +37,12 @@ MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size
     // And the chunk itself doesn't have enough memory, we have to extend the current chunk, 
     // rather than creating a new one.
     // TODO: Correctly compute the requested size, because currently it's all busted.
-    uint64_t new_size = (old_chunk == nullptr) ? size : (old_chunk->m_pos + size);
+    uint64_t chunk_header_size = sizeof(MemoryChunk);
+    uint64_t new_size = (old_chunk == nullptr) ? (size + chunk_header_size) : (old_chunk->m_pos + chunk_header_size + size);
     uint64_t page_count = static_cast<uint64_t>((new_size / static_cast<float>(PAGE_SIZE)) + 1);
     uint64_t total_size = page_count * PAGE_SIZE;
     if ((old_chunk != nullptr) && (m_pos == (old_chunk->m_size + sizeof(MemoryChunk)))) {
-        // Extend this chunk instead of creating a new one, so we don't waste a lot of memory on 
+        // Extend this chunk instead of creating a new one, so we don't waste a lot of memory on
         // storing MemoryChunk data structures.
         assert((total_size + sizeof(MemoryChunk)) <= m_cap);
         m_pos += (total_size - old_chunk->m_size);
@@ -139,6 +140,16 @@ MemoryArena::ChunkPair* MemoryArena::get_chunk_pair(MemoryChunk *chunk) {
     return (chunk_itr == m_chunks.end()) ? nullptr : &*chunk_itr; 
 }
 
+uint64_t MemoryArena::empty_chunks_count() const { 
+    std::lock_guard<std::mutex> lock(m_mutex);
+    uint64_t count = 0;
+    std::for_each(m_chunks.begin(), m_chunks.end(), [&count](const ChunkPair& pair) { 
+        if (pair.second == ChunkState::Free) 
+            count++;
+    });
+    return count;
+}
+
 void MemoryArena::realloc(uint64_t size) {
     uint64_t rem = m_cap - m_pos;
     if (size > rem) {
@@ -149,7 +160,7 @@ void MemoryArena::realloc(uint64_t size) {
         uint8_t *tmp = m_ptr;
         m_ptr = mem;
         m_cap = new_cap;
-        delete[]tmp;
+        delete[]tmp; // TODO: Realloc should use alloc_memory as well once it's used.
     }
 }
 

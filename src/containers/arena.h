@@ -7,14 +7,15 @@
 #include <mutex>
 #include <cassert>
 #include <type_traits>
+#include <algorithm>
 
 namespace ml
 {
 
 /**
  * The memory arena maintains a list of all available chunks.
- * If chunks is in used, it's assumed to have `InUse` state.
- * If chunks is free, it has a corresponding `Free` state.
+ * If chunk is in use, it's assumed to have `InUse` state.
+ * If chunk is free, it has a corresponding `Free` state.
 */
 enum class ChunkState : uint8_t {
     InUse,
@@ -86,16 +87,19 @@ private:
 };
 
 class MemoryArena {
+public:
     constexpr static uint64_t PAGE_SIZE = 1024u;
     constexpr static uint64_t ALLOC_SIZE{1024*1024*1024u};
 
     using ChunkPair = std::pair<MemoryChunk*, ChunkState>;
-public:
+
     /**
+     * Allocate `size` bytes of memory
+     * @note The size is aligned by the size of a single page `PAGE_SIZE`.
+     * Thus, if the requested size is 256bytes, 1024 will be allocated instead.
      * @param size A size to be allocated, by default it's 1Gib.
-     * @param align Alignment is currently disabled. 
     */
-    MemoryArena(std::uint64_t size=ALLOC_SIZE, std::uint64_t align=4);
+    MemoryArena(std::uint64_t size=ALLOC_SIZE);
 
     /**
      * Releases the memory allocated during the construction.
@@ -130,6 +134,28 @@ public:
     */
     void release_memory_chunk(MemoryChunk* chunk);
 
+    /**
+     * @return Total size of the arena.
+    */
+    uint64_t capacity() const { return m_cap; }
+
+    /**
+     * @return The amount of bytes left (empty space), not considering `Free` chunks.
+    */
+    uint64_t remaining() const { return m_cap - m_pos; }
+
+    /**
+     * @return Total amount of chunks, both `InUse` and `Free`.
+    */
+    uint64_t total_chunks_count() const { return m_chunks.size(); }
+
+    /**
+     * Computes the amount of empty chunks (chunks with a state `Free`).
+     * @note This operation involves locking the mutex.
+     * @return Empty chunks count.
+    */
+    uint64_t empty_chunks_count() const; 
+
 private:
     static void *alloc_memory(uint64_t size);
     static void release_memory(void *memory);
@@ -139,10 +165,9 @@ private:
 
     uint8_t *m_ptr;
     uint64_t m_pos;
-    uint8_t  m_align;
     uint64_t m_cap;
     std::list<ChunkPair> m_chunks;
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
 };
 
 } // namespace ml
