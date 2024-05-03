@@ -9,14 +9,14 @@
 
 namespace ml
 {
-MemoryArena::MemoryArena(std::uint64_t size, std::uint64_t align) {
-    uint64_t rem = size % align;
-    uint64_t aligned_cap = size + (align - rem); 
-    uint8_t *mem = static_cast<uint8_t *>(MemoryArena::alloc_memory(aligned_cap));
+MemoryArena::MemoryArena(std::uint64_t size) {
+    assert(size != 0);
+    if ((size % PAGE_SIZE) != 0)
+        size += PAGE_SIZE - (size % PAGE_SIZE); 
+    uint8_t *mem = static_cast<uint8_t *>(MemoryArena::alloc_memory(size));
     m_ptr = mem;
-    m_cap = aligned_cap;
+    m_cap = size;
     m_pos = 0;
-    m_align = align;
 }
 
 MemoryArena::~MemoryArena() {
@@ -25,104 +25,124 @@ MemoryArena::~MemoryArena() {
 
 MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    // TODO: While searching for a chunk of appropriate size, we see that a chunk has Free state, 
-    // but not enough space, we can check the neighbouring chunk as well, and if it has Free state
-    // and sum of their sizes satisfies our needs, we can merge those two chunks together and 
-    // return a single, bigger chunk. This process can continue, so we can merge more than one chunk'
-    // which are located in a row.
-    // We would have to write a recursive (probably) function which looks ahead for chunks with a status Free
-    // Or maybe merge chunks only when could find a chunk of an appropriate size?
 
-    // TODO: If right after the chunk comes m_pos, that means that we only have one chunk in a whole arena. 
-    // And the chunk itself doesn't have enough memory, we have to extend the current chunk, 
-    // rather than creating a new one.
-    uint64_t new_size = (old_chunk == nullptr) ? size : (old_chunk->m_pos + size);
-    uint64_t total_chunks = static_cast<uint64_t>((new_size / static_cast<float>(CHUNK_SIZE)) + 1);
-    uint64_t total_size = total_chunks * CHUNK_SIZE;
-    if ((old_chunk != nullptr) && (m_pos == (old_chunk->m_size + sizeof(MemoryChunk)))) {
-        // Extend this chunk instead of creating a new one, so we don't waste a lot of memory on 
-        // storing MemoryChunk data structures.
-        assert((total_size + sizeof(MemoryChunk)) <= m_cap);
-        m_pos += (total_size - old_chunk->m_size);
-        old_chunk->m_size = total_size;
+    // NOTE: Compute a total allocation size taking into account an alignment.
+    // If a chunk is nullptr, we include the size of the MemoryChunk into the total allocation size.
+    // Thus, if requested size is equal to 1024, which is exactly the size of a single page (PAGE_SIZE), 
+    // two pages will be allocated, comprising the size of 2048bytes in total,
+    // because MemoryChunk sturuct occupies 24bytes, thus 1024+24 = 1048 aligned by PAGE_SIZE would be 2048, or 2*PAGE_SIZE.
+    // +--------+-------------------+------------------------------------------------------------+
+    // | chunk  |         size      |                      empty space                           |
+    // | header |         size      |                      empty space                           |
+    // +--------+-------------------+------------------------------------------------------------+
+    //                              ^
+    //                              |
+    //                             m_pos
+    uint64_t chunk_header_size = sizeof(MemoryChunk);
+    bool extend_current_chunk = (old_chunk != nullptr) && (m_pos == (old_chunk->m_size + chunk_header_size));
+    uint64_t new_size = size + (extend_current_chunk ? 0 : chunk_header_size);
+    uint64_t rem = new_size % PAGE_SIZE;
+    uint64_t new_aligned_size = (rem == 0) ? new_size : (new_size + (PAGE_SIZE - (new_size % PAGE_SIZE)));
+    uint64_t page_count = new_aligned_size / PAGE_SIZE;
+    uint64_t total_size = page_count * PAGE_SIZE;
+
+    // NOTE: Extend the current chunk rather than reassigning a new one.
+    if (extend_current_chunk) {
+        assert(total_size <= m_cap);
+        m_pos += total_size;
+        old_chunk->m_size += total_size;
         return old_chunk;
     }
-    auto itr = std::find_if(m_chunks.begin(), m_chunks.end(),
-    [total_size](std::pair<MemoryChunk*, ChunkState>& chunk) -> bool {
-        if ((chunk.second == ChunkState::Free) && (chunk.first->m_size >= total_size))
-            return true;
-        return false;
-    });
-    if (itr != m_chunks.end()) {
-        MemoryChunk *chunk = itr->first;
-        if (old_chunk != nullptr) {
-            copy_chunk(chunk, old_chunk);
+
+    // NOTE: When looking for a new chunk of memory, we don't just grab the first which satisfies our size requirement.
+    // What we do instead is to search for the chunk with size closest to what we want.
+    // As we iterate through all the chunks, we compare their sizes and reassign new_chunk pointer if more optimal chunk 
+    // has been found.
+    ChunkPair* new_chunk = nullptr;
+    for (auto itr = m_chunks.begin(); itr != m_chunks.end(); itr++) {
+        if ((itr->second == ChunkState::Free) && (itr->first->size() >= total_size)) {
+            if (new_chunk == nullptr) {
+                new_chunk = &*itr;
+            }
+            else {
+                if (itr->first->size() < new_chunk->first->size()) {
+                    new_chunk = &*itr;
+                }
+            }
         }
-        return chunk;
     }
 
-    // NOTE: If this fails, we have to grow the arena, which would invalidate all the pointers.
-    // Thus we cannot do the reallocation at this point in time.
-    assert((total_size + sizeof(MemoryChunk)) <= (m_cap - m_pos));
-    MemoryChunk *chunk_ptr = reinterpret_cast<MemoryChunk *>(m_ptr + m_pos);
-    
-    m_pos += sizeof(MemoryChunk);
-
-    *chunk_ptr = MemoryChunk(m_ptr + m_pos, total_size);
-
-    m_pos += total_size;
-
-    m_chunks.push_back({chunk_ptr, ChunkState::InUse});
-
-    if (old_chunk != nullptr) {
-        copy_chunk(chunk_ptr, old_chunk);
+    if (new_chunk != nullptr) {
+        new_chunk->second = ChunkState::InUse;
+    }
+    else {
+        // NOTE: A chunk of a suitable size hasn't been found, 
+        // so allocate a new one out of empty space.
+        assert(total_size <= remaining());
+        MemoryChunk *chunk = (MemoryChunk *)(m_ptr + m_pos);
+        uint64_t offset = m_pos + chunk_header_size;
+        uint8_t* start = m_ptr + offset;
+        uint64_t chunk_size = total_size - chunk_header_size;
+        *chunk = MemoryChunk(start, chunk_size);
+        m_pos += total_size;
+        new_chunk = &*m_chunks.insert(m_chunks.end(), {chunk, ChunkState::InUse});
     }
 
-    return chunk_ptr;
+    // NOTE: If the old_chunk was specified, copy all the data from it to the new chunk.
+    // Find its corresponding pair inside m_chunks list and set its state to ChunkState::Free, 
+    // so it can be reused by others.
+    if (old_chunk != nullptr) { 
+        uint64_t copy_size = old_chunk->occupied();
+        std::memcpy(new_chunk->first->m_start, old_chunk->m_start, copy_size);
+        new_chunk->first->m_pos += copy_size;
+
+        // Find the old chunk's pair and set its state to Free
+        auto old_chunk_pair = std::find_if(m_chunks.begin(), m_chunks.end(),
+        [old_chunk](const std::pair<MemoryChunk*, ChunkState>& chunk_pair) -> bool {
+            return (chunk_pair.first == old_chunk) && (chunk_pair.second == ChunkState::InUse);
+        });
+        assert(old_chunk_pair != m_chunks.end());
+        old_chunk_pair->second = ChunkState::Free;
+        std::memset(old_chunk_pair->first->m_start, 0, copy_size);
+        old_chunk_pair->first->m_pos = 0;
+    }
+
+    return new_chunk->first;
 }
 
 void MemoryArena::release_memory_chunk(MemoryChunk *chunk) {
     std::lock_guard<std::mutex> lock(m_mutex);
-
     if (chunk != nullptr) {
-        ChunkPair* pair = chunk_pair(chunk);
-        assert(pair != nullptr);
-        pair->second = ChunkState::Free;
-        pair->first->m_pos = 0;
+        ChunkPair& pair = find_chunk_pair(chunk);
+        pair.second = ChunkState::Free;
+        std::memset(pair.first->m_start, 0, pair.first->m_pos);
+        pair.first->m_pos = 0;
     }
 }
 
-void MemoryArena::copy_chunk(MemoryChunk *new_chunk, MemoryChunk *old_chunk) {
-    ChunkPair* pair = chunk_pair(old_chunk);
-    assert(pair != nullptr);
-    std::memcpy(new_chunk->m_start, old_chunk->m_start, old_chunk->m_pos);
-    pair->second = ChunkState::Free;
-    pair->first->m_pos = 0;
-}
-
-MemoryArena::ChunkPair* MemoryArena::chunk_pair(MemoryChunk *chunk) {
-    auto chunk_itr = std::find_if(m_chunks.begin(), m_chunks.end(), 
-    [chunk](const std::pair<MemoryChunk*, ChunkState>& pair) -> bool {
-        if ((pair.first->m_start == chunk->m_start)
-            && (pair.second == ChunkState::InUse))
-            return true;
-        return false;
+MemoryArena::ChunkPair& MemoryArena::find_chunk_pair(MemoryChunk* chunk) {
+    assert(chunk != nullptr);
+    auto chunk_pair = std::find_if(m_chunks.begin(), m_chunks.end(),
+    [chunk](const std::pair<MemoryChunk*, ChunkState>& chunk_pair) -> bool {
+        return (chunk_pair.first == chunk) && (chunk_pair.second == ChunkState::InUse);
     });
-    return (chunk_itr == m_chunks.end()) ? nullptr : &*chunk_itr; 
+    assert(chunk_pair != m_chunks.end());
+    return *chunk_pair;
 }
 
-void MemoryArena::realloc(uint64_t size) {
-    uint64_t rem = m_cap - m_pos;
-    if (size > rem) {
-        uint64_t new_cap = std::max(size + (m_cap - rem), m_cap << 2);
-        uint8_t *mem = new uint8_t[new_cap];
-        std::memset(mem, 0, new_cap);
-        std::memcpy(mem, m_ptr, m_pos);
-        uint8_t *tmp = m_ptr;
-        m_ptr = mem;
-        m_cap = new_cap;
-        delete[]tmp;
-    }
+uint64_t MemoryArena::total_chunks_count() const { 
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_chunks.size(); 
+}
+
+uint64_t MemoryArena::empty_chunks_count() const { 
+    std::lock_guard<std::mutex> lock(m_mutex);
+    uint64_t count = 0;
+    std::for_each(m_chunks.begin(), m_chunks.end(), [&count](const ChunkPair& pair) { 
+        if (pair.second == ChunkState::Free) 
+            count++;
+    });
+    return count;
 }
 
 void *MemoryArena::alloc_memory(uint64_t size) {

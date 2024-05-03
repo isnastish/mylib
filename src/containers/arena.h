@@ -7,14 +7,15 @@
 #include <mutex>
 #include <cassert>
 #include <type_traits>
+#include <algorithm>
 
 namespace ml
 {
 
 /**
  * The memory arena maintains a list of all available chunks.
- * If chunks is in used, it's assumed to have `InUse` state.
- * If chunks is free, it has a corresponding `Free` state.
+ * If chunk is in use, it's assumed to have `InUse` state.
+ * If chunk is free, it has a corresponding `Free` state.
 */
 enum class ChunkState : uint8_t {
     InUse,
@@ -26,12 +27,6 @@ public:
     MemoryChunk(uint8_t *ptr, uint64_t size)
     : m_start(ptr), m_size(size), m_pos(0) {}
 
-    /**
-     * Compute the size of the remaining space in a chunk.
-     * @return number of bytes remaining bytes.
-    */
-    uint64_t remaining() const { return m_size - m_pos; }
-    
     /**
      * Push an object into the memory, incrementing the current position.
      * Asserts if the current position plus size greater than memory size.
@@ -76,8 +71,25 @@ public:
      * @return Return a pointer to the end of already occupied memory. 
     */
     uint8_t* end() { return (m_start + m_pos); }
-  
+    
+    /**
+     * Compute the size of the remaining space in a chunk.
+     * @return number of bytes remaining bytes.
+    */
+    uint64_t remaining() const { return m_size - m_pos; }
+    
+    /**
+     * @return Total chunk size.
+    */
+    uint64_t size() const { return m_size; }
+
+    /**
+     * @return How much space is already occupied.
+    */
+    uint64_t occupied() const { return size() - remaining(); }
+    
 private:
+    // TODO: Remove!
     friend class MemoryArena;
 
     uint8_t *m_start;
@@ -86,16 +98,19 @@ private:
 };
 
 class MemoryArena {
-    constexpr static uint64_t CHUNK_SIZE = 1024u;
+public:
+    constexpr static uint64_t PAGE_SIZE = 1024u;
     constexpr static uint64_t ALLOC_SIZE{1024*1024*1024u};
 
     using ChunkPair = std::pair<MemoryChunk*, ChunkState>;
-public:
+
     /**
+     * Allocate `size` bytes of memory
+     * @note The size is aligned by the size of a single page `PAGE_SIZE`.
+     * Thus, if the requested size is 256bytes, 1024 will be allocated instead.
      * @param size A size to be allocated, by default it's 1Gib.
-     * @param align Alignment is currently disabled. 
     */
-    MemoryArena(std::uint64_t size=ALLOC_SIZE, std::uint64_t align=4);
+    MemoryArena(std::uint64_t size=ALLOC_SIZE);
 
     /**
      * Releases the memory allocated during the construction.
@@ -121,28 +136,48 @@ public:
      * as a sum of the provided chunk plus size.
      * @return A new MemoryChunk which has enough space to fit the desired size.
     */
-    MemoryChunk* get_memory_chunk(MemoryChunk *chunk, uint64_t size);
+    MemoryChunk* get_memory_chunk(MemoryChunk* chunk, uint64_t size);
 
     /**
      * Puts the supplied chunk into `Free`(ed) state so it can be used by others.
      * @note Doesn't free any memory.
+     * @note Once the chunk is released, it no longer can be used by the one who released it.
      * @param chunk Chunk to be released.
     */
     void release_memory_chunk(MemoryChunk* chunk);
 
+    /**
+     * @return Total size of the arena.
+    */
+    uint64_t capacity() const { return m_cap; }
+
+    /**
+     * @return The amount of bytes left (empty space), not considering `Free` chunks.
+    */
+    uint64_t remaining() const { return m_cap - m_pos; }
+
+    /**
+     * @return Total amount of chunks, both `InUse` and `Free`.
+    */
+    uint64_t total_chunks_count() const;
+
+    /**
+     * Computes the amount of empty chunks (chunks with a state `Free`).
+     * @note This operation involves locking the mutex.
+     * @return Empty chunks count.
+    */
+    uint64_t empty_chunks_count() const; 
+
 private:
     static void *alloc_memory(uint64_t size);
     static void release_memory(void *memory);
-    void realloc(uint64_t size);
-    void copy_chunk(MemoryChunk* new_chunk, MemoryChunk* old_chunk);
-    ChunkPair* chunk_pair(MemoryChunk *chunk);
+    ChunkPair& find_chunk_pair(MemoryChunk* chunk);
 
     uint8_t *m_ptr;
     uint64_t m_pos;
-    uint8_t  m_align;
     uint64_t m_cap;
     std::list<ChunkPair> m_chunks;
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
 };
 
 } // namespace ml
