@@ -8,8 +8,9 @@
 #include <cassert>
 #include <type_traits>
 #include <algorithm>
+#include <utility>
 
-namespace ml
+namespace mylib
 {
 
 /**
@@ -63,15 +64,25 @@ public:
     }
 
     /**
-     * @return Return a pointer to the beginning of the memory chunk. 
+     * @return A const pointer to the beginning of the memory chunk.  
+    */
+    const uint8_t* begin() const { return m_start; }
+
+    /**
+     * @return A const pointer to the end of the memory chunk.
+    */
+    const uint8_t* end() const { return (m_start + m_pos); }
+
+    /**
+     * @return A pointer to the beginning of the memory chunk. 
     */
     uint8_t* begin() { return m_start; }
 
     /**
-     * @return Return a pointer to the end of already occupied memory. 
+     * @return A pointer to the end of already occupied memory. 
     */
     uint8_t* end() { return (m_start + m_pos); }
-    
+
     /**
      * Compute the size of the remaining space in a chunk.
      * @return number of bytes remaining bytes.
@@ -87,9 +98,21 @@ public:
      * @return How much space is already occupied.
     */
     uint64_t occupied() const { return size() - remaining(); }
+
+    /**
+     * Copies the data residing in a source chunk, supplied as an argument
+     * to the current chunk. Adjusts the position of the current chunk accordingly.
+     * @param src_chunk Memory chunk to copy the data from.
+     * @param size Size of the data to be copied.
+    */
+    void copy(const MemoryChunk* src_chunk, uint64_t size) {
+        assert(remaining() > size);
+        uint8_t* start = m_start + m_pos; 
+        std::memcpy(start, src_chunk->begin(), size);
+        m_pos += size;
+    }
     
 private:
-    // TODO: Remove!
     friend class MemoryArena;
 
     uint8_t *m_start;
@@ -98,11 +121,10 @@ private:
 };
 
 class MemoryArena {
+    using ChunkPair = std::pair<MemoryChunk*, ChunkState>;
 public:
     constexpr static uint64_t PAGE_SIZE = 1024u;
-    constexpr static uint64_t ALLOC_SIZE{1024*1024*1024u};
-
-    using ChunkPair = std::pair<MemoryChunk*, ChunkState>;
+    constexpr static uint64_t ALLOC_SIZE{1024*1024*1024u}; // 1gib
 
     /**
      * Allocate `size` bytes of memory
@@ -136,7 +158,7 @@ public:
      * as a sum of the provided chunk plus size.
      * @return A new MemoryChunk which has enough space to fit the desired size.
     */
-    MemoryChunk* get_memory_chunk(MemoryChunk* chunk, uint64_t size);
+    MemoryChunk* get_memory_chunk(uint64_t size, MemoryChunk* chunk=nullptr);
 
     /**
      * Puts the supplied chunk into `Free`(ed) state so it can be used by others.
@@ -171,7 +193,7 @@ public:
 private:
     static void *alloc_memory(uint64_t size);
     static void release_memory(void *memory);
-    ChunkPair& find_chunk_pair(MemoryChunk* chunk);
+    ChunkPair* find_chunk_pair(MemoryChunk* chunk);
 
     uint8_t *m_ptr;
     uint64_t m_pos;
@@ -180,4 +202,4 @@ private:
     mutable std::mutex m_mutex;
 };
 
-} // namespace ml
+} // namespace mylib

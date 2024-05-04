@@ -1,6 +1,12 @@
 #pragma once 
 
-namespace ml
+namespace mylib
 {
 
-} // namespace ml
+template<class Object>
+class DoubleLinkedList {
+public:
+
+};
+
+} // namespace mylib
