@@ -1,6 +1,6 @@
 # Overview
 This is small C++ container library with custom memory allocation strategy using memory arenas technique.
-Keep in mind that the project is still deeply in development and most of the data structures are not implemented, or not complete. On the contrary, arenas implementation are considered to be complete, I will probably add more functionality
+Keep in mind that the project is still deeply in development and most of the data structures are not implemented, or not complete. On the contrary, arenas implementation is considered to be complete, I will probably add more functionality
 to it as I iterate over the codebase, but the core will stay the same.
     The final goal for this project is to have a stable implementation of different data structures sharing 
 a common memory, allocated by the arena. The arena itself has to be thread-safe and self-growable, 
