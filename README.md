@@ -11,3 +11,7 @@ tested thoroughly together with benchmarks against the containers from C++ stand
 # Memory Arena 
 The code for memory arena and all its auxiliary functionality can be found in `./src/containers/arena.h`
 and its corresponding implementation file. For further investigation about memory I highly recommend watching this playlist [General Purpose Allocation](https://www.youtube.com/watch?v=MvDUe2evkHg&list=PLEMXAbCVnmY6Azbmzj3BiC3QRYHE9QoG7&ab_channel=MollyRocket) from Casey Muratori, a developer with more than 30 years of programming experience.
+
+The way I implemented an arena is pretty common. In arena's ctor, we make a call to an operating system to allocate memory of a specified size. On Windows I'm using [VirtualAlloc](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc). That gives us back a giant pull of memory which we can use however we want, 
+for example split it up into sub-chunks and allocate memory in pages.
+In my case, I decided to go with a separate helper class `MemoryChunk`. 
