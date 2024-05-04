@@ -10,4 +10,4 @@ tested thoroughly together with benchmarks against the containers from C++ stand
 
 # Memory Arena 
 The code for memory arena and all its auxiliary functionality can be found in `./src/containers/arena.h`
-and its corresponding implementation file. For further investigation about memory and general purpose allocation I highly recommend watching this playlist `(General Purpose Allocation)[https://www.youtube.com/watch?v=MvDUe2evkHg&list=PLEMXAbCVnmY6Azbmzj3BiC3QRYHE9QoG7&ab_channel=MollyRocket]` from Casey Muratori, a developer with more than 30 years of programming experience.
+and its corresponding implementation file. For further investigation about memory I highly recommend watching this playlist [General Purpose Allocation](https://www.youtube.com/watch?v=MvDUe2evkHg&list=PLEMXAbCVnmY6Azbmzj3BiC3QRYHE9QoG7&ab_channel=MollyRocket) from Casey Muratori, a developer with more than 30 years of programming experience.
