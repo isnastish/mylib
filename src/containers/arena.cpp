@@ -48,7 +48,7 @@ MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size
 
     // NOTE: Extend the current chunk rather than reassigning a new one.
     if (extend_current_chunk) {
-        assert(total_size <= m_cap);
+        assert(total_size <= remaining());
         m_pos += total_size;
         old_chunk->m_size += total_size;
         return old_chunk;
@@ -58,9 +58,11 @@ MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size
     // What we do instead is to search for the chunk with size closest to what we want.
     // As we iterate through all the chunks, we compare their sizes and reassign new_chunk pointer if more optimal chunk 
     // has been found.
+    // The const of this operation is O(N), where N is the number of chunks stored in a chunks list, 
+    // plus the time spend on a size comparison.
     ChunkPair* new_chunk = nullptr;
     for (auto itr = m_chunks.begin(); itr != m_chunks.end(); itr++) {
-        if ((itr->second == ChunkState::Free) && (itr->first->size() >= total_size)) {
+        if ((itr->second == ChunkState::Free) && (itr->first->size() >= (total_size - chunk_header_size))) {
             if (new_chunk == nullptr) {
                 new_chunk = &*itr;
             }
