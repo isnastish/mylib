@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.23)
 # sets C++ standard
 set(CMAKE_CXX_STANDARD 20)
 
-project("growing_array")
+project("cpp_container_library")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
@@ -17,7 +17,6 @@ add_library(
     "./src/containers/hash_map.h"
     "./src/containers/string.cpp"
     "./src/containers/string.h"
-    "./src/containers/dequeue.h"
     "./src/containers/set.h"
     "./src/containers/queue.h"
     "./src/containers/stack.h"
@@ -32,12 +31,12 @@ target_include_directories(
 )
 
 add_executable(
-    growing_array
+    main
     "./src/main.cpp"
 )
 
 target_link_libraries(
-    growing_array
+    main
     PUBLIC
         containers_lib
 )

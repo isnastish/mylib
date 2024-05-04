@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ml
+namespace mylib
 {
 
-} // namespace ml
+} // namespace mylib
