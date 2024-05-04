@@ -3,7 +3,6 @@
 
 namespace test
 {
-// TODO: Rename to Clock?
 class Timer {
 public:
     Timer();

@@ -23,7 +23,7 @@
 
 #define ml_max(a, b) ((a) > (b) ? (a) : (b))
 
-namespace ml
+namespace mylib
 {
 template<class Object>
 class GrowingArray
@@ -393,4 +393,4 @@ GrowingArray<Object>::iterator GrowingArray<Object>::shift(const_iterator pos, s
     return at;
 }
 
-} // namespace ml
+} // namespace mylib

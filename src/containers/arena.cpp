@@ -7,12 +7,12 @@
 # undef min
 #endif
 
-namespace ml
+namespace mylib
 {
 MemoryArena::MemoryArena(std::uint64_t size) {
     assert(size != 0);
     if ((size % PAGE_SIZE) != 0)
-        size += PAGE_SIZE - (size % PAGE_SIZE); 
+        size += PAGE_SIZE - (size % PAGE_SIZE);
     uint8_t *mem = static_cast<uint8_t *>(MemoryArena::alloc_memory(size));
     m_ptr = mem;
     m_cap = size;
@@ -23,7 +23,7 @@ MemoryArena::~MemoryArena() {
     MemoryArena::release_memory(m_ptr);
 }
 
-MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size) {
+MemoryChunk* MemoryArena::get_memory_chunk(uint64_t size, MemoryChunk *old_chunk) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // NOTE: Compute a total allocation size taking into account an alignment.
@@ -115,21 +115,21 @@ MemoryChunk* MemoryArena::get_memory_chunk(MemoryChunk *old_chunk, uint64_t size
 void MemoryArena::release_memory_chunk(MemoryChunk *chunk) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (chunk != nullptr) {
-        ChunkPair& pair = find_chunk_pair(chunk);
-        pair.second = ChunkState::Free;
-        std::memset(pair.first->m_start, 0, pair.first->m_pos);
-        pair.first->m_pos = 0;
+        ChunkPair* pair = find_chunk_pair(chunk);
+        pair->second = ChunkState::Free;
+        std::memset(pair->first->m_start, 0, pair->first->m_pos);
+        pair->first->m_pos = 0;
     }
 }
 
-MemoryArena::ChunkPair& MemoryArena::find_chunk_pair(MemoryChunk* chunk) {
+MemoryArena::ChunkPair* MemoryArena::find_chunk_pair(MemoryChunk* chunk) {
     assert(chunk != nullptr);
     auto chunk_pair = std::find_if(m_chunks.begin(), m_chunks.end(),
     [chunk](const std::pair<MemoryChunk*, ChunkState>& chunk_pair) -> bool {
         return (chunk_pair.first == chunk) && (chunk_pair.second == ChunkState::InUse);
     });
     assert(chunk_pair != m_chunks.end());
-    return *chunk_pair;
+    return &*chunk_pair;
 }
 
 uint64_t MemoryArena::total_chunks_count() const { 
@@ -166,4 +166,4 @@ void MemoryArena::release_memory(void *memory) {
 #endif
 }
 
-} // namespace ml
+} // namespace mylib
