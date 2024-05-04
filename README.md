@@ -7,3 +7,7 @@ a common memory, allocated by the arena. The arena itself has to be thread-safe 
 meaning that, once we've run out of space, the same chunk will be reallocated and all the data preserved.
 All external pointers to memory chunks has to be updated during the reallocation. All the functionality has to be
 tested thoroughly together with benchmarks against the containers from C++ standard library.
+
+# Memory Arena 
+The code for memory arena and all its auxiliary functionality can be found in `./src/containers/arena.h`
+and its corresponding implementation file. For further investigation about memory and general purpose allocation I highly recommend watching this playlist `(General Purpose Allocation)[https://www.youtube.com/watch?v=MvDUe2evkHg&list=PLEMXAbCVnmY6Azbmzj3BiC3QRYHE9QoG7&ab_channel=MollyRocket]` from Casey Muratori, a developer with more than 30 years of programming experience.
