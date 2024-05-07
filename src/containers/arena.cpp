@@ -86,39 +86,27 @@ Chunk* Arena::getChunk(uint64_t size, Chunk *old_chunk) {
                 break;
         }
 
-        // NOTE: Create a new memory arena
+        // NOTE: Create a new memory arena.
         if (arena == nullptr) {
             auto* arena = reinterpret_cast<Arena*>(m_ptr + m_cap);
-            *arena = std::move(Arena(m_cap));
+            *arena = std::move(Arena());
+            arena->m_next = m_prev;
+            arena->m_prev = m_prev;
+            if (m_prev != nullptr) {
+                m_prev->m_next = arena;
+            }
         }
 
         // NOTE: Create a new chunk inside the current memory arena.
         ChunkPair* pair = reinterpret_cast<ChunkPair*>(arena->m_ptr + m_pos);
-        pair->chunk = std::move(Chunk(m_ptr + sizeof(ChunkPair), total_size));
+        Chunk chunk(arena->m_ptr + sizeof(ChunkPair), total_size - chunk_header_size);
+        pair->chunk = std::move(chunk);
         pair->state = ChunkState::IN_USE;
-        pair->next = nullptr;
-        pair->prev = m_chunks->prev; 
+        pair->next = m_chunks->prev;
+        pair->prev = arena->m_chunks->prev;
+        if (arena->m_chunks->prev) {
 
-        // NOTE: A chunk of a suitable size hasn't been found, 
-        // so allocate a new one out of empty space.
-        // assert(total_size <= remaining());
-        // ChunkPair *chunk_pair = reinterpret_cast<ChunkPair*>(m_ptr + m_pos);
-        // uint64_t offset = m_pos + chunk_header_size;
-        // uint8_t* start = m_ptr + offset;
-        // uint64_t chunk_size = total_size - chunk_header_size;
-        
-        // chunk_pair->chunk = std::move(Chunk(start, chunk_size));
-        // chunk_pair->state = ChunkState::IN_USE;
-        
-        // m_pos += total_size;
-
-        // ChunkPair *pos = m_chunks;
-        // for (; pos != nullptr; pos = pos->next) {
-
-        // }
-        // pos = chunk_pair;
-        
-        // new_chunk = &*m_chunks.insert(m_chunks.end(), {chunk, ChunkState::IN_USE});
+        }
     }
 
     // NOTE: If the old_chunk was specified, copy all the data from it to the new chunk.
@@ -170,6 +158,38 @@ void Arena::releaseMemory(void *memory) {
 #else
     free(memory);
 #endif
+}
+
+ArenaList::ArenaList()
+: m_arenas(std::make_unique<Arena>()) {
+}
+
+ArenaList::ArenaList(ArenaList&& rhs) 
+: m_arenas(std::move(rhs.m_arenas)),
+  m_arenas_count(rhs.m_arenas_count) {}
+    
+ArenaList& ArenaList::operator=(ArenaList&& rhs) {
+    if (this == &rhs) return *this;
+    m_arenas = std::move(rhs.m_arenas);
+    m_arenas_count = rhs.m_arenas_count;
+    return *this;
+}
+
+Chunk* ArenaList::getChunk(uint64_t size, Chunk* old_chunk) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    // 1. Wind an appropriate arena.
+    // 2. Get a memory chunk from that arena.
+}
+
+void ArenaList::releaseChunk(Chunk* chunk) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    // 1. Find a chunk.
+    // 2. Put it into a FREE state.
+}
+
+uint64_t ArenaList::arenasCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_arenas_count;
 }
 
 } // namespace mylib

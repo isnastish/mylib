@@ -108,7 +108,7 @@ private:
     Object* m_data{nullptr};
     size_t m_size{0};
     size_t m_cap{0};
-    MemoryArena *m_arena;
+    // MemoryArena *m_arena;
 };
 
 /*************************************************************************

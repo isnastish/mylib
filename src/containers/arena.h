@@ -107,15 +107,16 @@ public:
     void reset() { std::memset(m_start, 0, m_pos); m_pos = 0; }
 
 private:
-    uint8_t *m_start;
+    uint8_t  *m_start;
     uint64_t m_size;
     uint64_t m_pos;
+    Arena    *m_arena;
 };
 
 
 class Arena {
     /**
-     * The memory arena maintains a list of all available chunks.
+     * @brief The memory arena maintains a list of all available chunks.
      * If chunk is in use, it's assumed to have `IN_USE` state.
      * If chunk is free, it has a corresponding `Free` state.
     */
@@ -124,11 +125,8 @@ class Arena {
         FREE
     };
 
-    /**
-     * 
-    */
     struct ChunkPair {
-        Chunk chunk;
+        Chunk      chunk;
         ChunkState state;
         ChunkPair *next;
         ChunkPair *prev;
@@ -152,18 +150,14 @@ public:
     ~Arena();
 
     /**
-     * @note Memory arenas cannot be copied, only moved.
+     * @brief Memory arenas neither can be moved nor copied.
+     * @note Move assignment operator intentionally made private for moving Arenas internally.
+     * When move assigning the object, the arena that we assigning to is not initialized, 
+     * usually it's a pointer which we dereference. 
+     * @see getChunk function, this is the only place where it's used. 
     */
-    Arena(const Arena& rhs) = delete;
-    Arena& operator=(const Arena& rhs) = delete;
-
-    Arena(Arena&& rhs) {
-
-    }
-
-    Arena& operator=(Arena&& rhs) {
-
-    }
+    Arena(const Arena&) = delete;
+    Arena& operator=(const Arena&) = delete;
 
     /**
      * Searches for a memory chunk of a sufficient size and returns it to the user.
@@ -210,19 +204,87 @@ public:
     uint64_t emptyChunksCount() const { return m_empty_chunks_count; } 
 
 private:
-    static void *allocMemory(uint64_t size);
-    static void releaseMemory(void *memory);
-    ChunkPair* getChunkPair();
+    ChunkPair*   getChunkPair();
+    static void* allocMemory(uint64_t size);
+    static void  releaseMemory(void* memory);
 
-    uint8_t *m_ptr;
-    uint64_t m_pos;
-    uint64_t m_cap;
-    Arena *m_next;
-    Arena *m_prev;
-    ChunkPair *m_chunks;
-    uint64_t m_chunks_count;
-    uint64_t m_empty_chunks_count; 
-    mutable std::mutex m_mutex;
+    uint8_t*   m_ptr;
+    uint64_t   m_pos;
+    uint64_t   m_cap;
+    uint64_t   m_chunks_count;
+    uint64_t   m_empty_chunks_count; 
+    ChunkPair* m_chunks;
 };
+
+class ArenaList {
+public:
+    ArenaList();
+
+    ArenaList(const ArenaList&) = delete;
+    ArenaList& operator=(const ArenaList&) = delete;
+    
+    ArenaList(ArenaList&& rhs); 
+    ArenaList& operator=(ArenaList&& rhs);
+
+    Chunk*   getChunk(uint64_t size, Chunk* old_chunk);
+    void     releaseChunk(Chunk* chunk);
+    uint64_t arenasCount() const; 
+
+private:
+    std::unique_ptr<Arena> m_arenas;
+    uint64_t               m_arenas_count;
+    mutable std::mutex     m_mutex;
+};
+
+#if 0
+//////////////////////////////////////////////////////////////////////////////////
+// Usage of the API
+template<class Object>
+class Array {
+public:
+    explicit Array(ArenaList* arena_list, size_t count=0);
+    Array(const Array& rhs);
+
+    void pushBack(const Object& obj);
+    void pushBack(Object&& obj);
+
+private:
+    ArenaList* m_arenas;
+    Chunk*     m_chunk;
+};
+
+
+class String {
+public:
+    explicit String(ArenaList* arena_list);
+    String(ArenaList* arena_list, std::string&& src);
+    String(ArenaList* arena_list, const std::string& src);
+
+    String& operator+=(const String&);
+    String& operator+=(const std::string&);
+    String& operator+=(const char*);
+    String& operator+=(const std::string_view);
+
+private:
+    ArenaList* m_arenas;
+    Chunk*     m_chunk;
+};
+
+String operator+(const String& a, const String& b) {
+
+}
+
+String operator+(const String& a, const std::string& b) {
+
+}
+
+String operator+(const String& a, std::string_view b) {
+
+}
+
+String operator+(const String& a, const char *b) {
+
+}
+#endif
 
 } // namespace mylib
