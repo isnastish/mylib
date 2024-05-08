@@ -26,8 +26,21 @@ Arena::~Arena() {
     releaseMemory(m_ptr);
 }
 
+Arena::ChunkPair*   Arena::getChunkPair(Chunk* chunk) {
+    if (chunk) {
+        for (ChunkPair* chunk_pair = m_chunks; 
+            chunk_pair != m_chunks->prev;
+            chunk_pair = chunk_pair->next) {
+            // TODO: How do we compare chunks between each other?
+            if ((chunk == &chunk_pair->chunk) && (chunk_pair->state == ChunkState::IN_USE)) {
+                return chunk_pair;
+            }
+        }
+    }
+}
+
 Chunk* Arena::getChunk(uint64_t size, Chunk *old_chunk) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    // std::lock_guard<std::mutex> lock(m_mutex);
 
     // NOTE: Compute a total allocation size taking into account an alignment.
     // If a chunk is nullptr, we include the size of the Chunk into the total allocation size.
@@ -58,6 +71,7 @@ Chunk* Arena::getChunk(uint64_t size, Chunk *old_chunk) {
     // NOTE: Search for a new chunk in the current arena, if wasn't found, jump to the next arena, 
     // otherwise create a new memory arena of the same size that the current one.
     // We would have to iterate through all the chunks to verify whether there is a chunk of an appropriate size.
+#if 0
     ChunkPair* new_chunk = nullptr;
     for (Arena* arena = this; arena != nullptr; arena = arena->m_next) {
         if (!arena->m_empty_chunks_count)
@@ -123,12 +137,13 @@ Chunk* Arena::getChunk(uint64_t size, Chunk *old_chunk) {
         old_chunk_pair->state = ChunkState::FREE;
         old_chunk_pair->chunk.reset();
     }
-
     return &new_chunk->chunk;
+#endif
+    return nullptr;
 }
 
 void Arena::releaseChunk(Chunk *chunk) {
-    std::lock_guard<std::mutex> lock(m_mutex);
+    // std::lock_guard<std::mutex> lock(m_mutex);
     if (chunk != nullptr) {
         ChunkPair* chunk_pair = m_chunks;
         for (; chunk_pair != nullptr; chunk_pair = chunk_pair->next) {
@@ -160,8 +175,9 @@ void Arena::releaseMemory(void *memory) {
 #endif
 }
 
-ArenaList::ArenaList()
-: m_arenas(std::make_unique<Arena>()) {
+ArenaList::ArenaList() {
+    m_arenas.push_back(std::make_unique<Arena>());
+    m_arenas_count += 1;
 }
 
 ArenaList::ArenaList(ArenaList&& rhs) 
@@ -177,8 +193,76 @@ ArenaList& ArenaList::operator=(ArenaList&& rhs) {
 
 Chunk* ArenaList::getChunk(uint64_t size, Chunk* old_chunk) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    // 1. Wind an appropriate arena.
-    // 2. Get a memory chunk from that arena.
+
+    // NOTE: Compute a total allocation size taking into account an alignment.
+    // If a chunk is nullptr, we include the size of the Chunk into the total allocation size.
+    // Thus, if requested size is equal to 1024, which is exactly the size of a single page (PAGE_SIZE), 
+    // two pages will be allocated, comprising the size of 2048bytes in total,
+    // because Chunk sturuct occupies 24bytes, thus 1024+24 = 1048 aligned by PAGE_SIZE would be 2048, or 2*PAGE_SIZE.
+    // +--------+-------------------+------------------------------------------------------------+
+    // | chunk  |         size      |                      empty space                           |
+    // | header |         size      |                      empty space                           |
+    // +--------+-------------------+------------------------------------------------------------+
+    //                              ^
+    //                              |
+    //                             m_pos
+    uint64_t new_size = size + Arena::CHUNK_HEADER_SIZE;
+    uint64_t rem = new_size % Arena::PAGE_SIZE;
+    uint64_t new_aligned_size = (rem == 0) ? new_size : (new_size + Arena::PAGE_SIZE - rem);
+    uint64_t page_count = new_aligned_size / Arena::PAGE_SIZE;
+    uint64_t total_size = page_count * Arena::PAGE_SIZE;
+
+    // 1. Iterate throuh all the arenas and make a query in order to retrieve an empty chunk.
+    // 2. If none of the chunks was found, either create a new chunk or create a new arena,
+    // if there is not sufficient memory.
+    Arena* potential_arena = nullptr;
+    for (auto itr = m_arenas.begin(); itr != m_arenas.end(); itr++) {
+        Arena* arena = itr->get();
+        if (!arena->emptyChunksCount()) {
+            continue;
+        }
+        Arena::ChunkPair* chunk_pair = arena->findFreeChunk(total_size, old_chunk);
+        if (chunk_pair) {
+            chunk_pair->state = Arena::ChunkState::FREE;
+            return &chunk_pair->chunk;
+        }
+        // In case we're not able to find a chunk, we assign an arena which enough empty space.
+        if (!arena && arena->remaining() > total_size) {
+            potential_arena = arena;
+        }
+    }
+
+    // Arena where to insert a chunk hasn't been found.
+    if (!potential_arena) {
+        auto itr = m_arenas.insert(m_arenas.end(), std::make_unique<Arena>());
+        potential_arena = itr->get();
+    }
+
+    auto* chunk_pair = reinterpret_cast<Arena::ChunkPair*>(potential_arena->m_ptr + potential_arena->m_pos);
+    uint8_t* start = potential_arena->m_ptr + Arena::CHUNK_HEADER_SIZE;
+    uint64_t chunk_emtpy_space = total_size - Arena::CHUNK_HEADER_SIZE;
+    chunk_pair->chunk = Chunk(start, chunk_emtpy_space); // move the chunk 
+    chunk_pair->state = Arena::ChunkState::IN_USE;
+    if (potential_arena->m_chunks) {
+        // In order to speed up the insertion time, we have to maintain a double linked list.
+        // (prev) and (next) pointers, it a trade-off between consuming more memory or gainin more performance.
+        // prev = next = nullptr; (if empty)
+        // 
+        potential_arena->m_chunks->prev->prev = chunk_pair;
+        potential_arena->m_chunks->
+
+        chunk_pair->next = potential_arena->m_chunks->prev;
+        chunk_pair->prev = potential_arena->m_chunks->prev->prev;
+    }
+    pair->prev = arena->m_chunks->prev;
+    if (arena->m_chunks->prev)
+    new_chunk->chunk = Chunk();
+
+    // TODO: Don't forget to release the old chunk.
+    if (old_chunk) {
+        Arena::ChunkPair* chunk_pair = getChunkPair(old_chunk);
+
+    }
 }
 
 void ArenaList::releaseChunk(Chunk* chunk) {

@@ -21,14 +21,13 @@ protected:
 
 using ArenaDeathFixture = ArenaFixture;
 
+#if 0
 TEST_F(ArenaFixture, ForceAlignSize) {
     constexpr uint64_t requested_size = 256;
     mylib::Arena arena(m_medium_arena_size);
     auto* chunk = arena.getChunk(requested_size);
-    
 }
 
-#if 0
 TEST(Arena, SizeOfTwoPages) {
     mylib::Arena arena(1033);
     ASSERT_EQ(arena.capacity(), mylib::Arena::PAGE_SIZE*2);
@@ -168,5 +167,60 @@ TEST_F(ArenaDeathFixture, RunOutOfSpaceWhenCreatingANewChunk) {
     ASSERT_EQ(arena.total_chunks_count(), 1);
     ASSERT_EQ(chunk->size(), (chunk_size - m_chunk_header_size + mylib::Arena::PAGE_SIZE));
     ASSERT_DEATH(arena.getChunk(mylib::Arena::PAGE_SIZE), "");
+}
+#endif
+
+#if 0
+//////////////////////////////////////////////////////////////////////////////////
+// Usage of the API
+//
+template<class Object>
+class Array {
+public:
+    explicit Array(ArenaList* arena_list, size_t count=0);
+    Array(const Array& rhs);
+
+    void pushBack(const Object& obj);
+    void pushBack(Object&& obj);
+
+private:
+    ArenaList* m_arenas;
+    Chunk*     m_chunk;
+};
+
+// ArenaList arena_list;
+// Array<Array<int>> nested_array(&arena_list);
+// nested_array.push_back(Array<int>(&arena_list));
+
+class String {
+public:
+    explicit String(ArenaList* arena_list);
+    String(ArenaList* arena_list, std::string&& src);
+    String(ArenaList* arena_list, const std::string& src);
+
+    String& operator+=(const String&);
+    String& operator+=(const std::string&);
+    String& operator+=(const char*);
+    String& operator+=(const std::string_view);
+
+private:
+    ArenaList* m_arenas;
+    Chunk*     m_chunk;
+};
+
+String operator+(const String& a, const String& b) {
+
+}
+
+String operator+(const String& a, const std::string& b) {
+
+}
+
+String operator+(const String& a, std::string_view b) {
+
+}
+
+String operator+(const String& a, const char *b) {
+
 }
 #endif

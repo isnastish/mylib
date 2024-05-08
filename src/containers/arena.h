@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <algorithm>
 #include <utility>
+#include <memory> // std::unique_ptr
 
 namespace mylib
 {
@@ -110,7 +111,6 @@ private:
     uint8_t  *m_start;
     uint64_t m_size;
     uint64_t m_pos;
-    Arena    *m_arena;
 };
 
 
@@ -128,13 +128,14 @@ class Arena {
     struct ChunkPair {
         Chunk      chunk;
         ChunkState state;
-        ChunkPair *next;
-        ChunkPair *prev;
+        ChunkPair* next;
+        ChunkPair* prev;
     };
 
 public:
+    constexpr static uint64_t CHUNK_HEADER_SIZE = sizeof(Arena::ChunkPair);
     constexpr static uint64_t PAGE_SIZE = 1024u;
-    constexpr static uint64_t ALLOC_SIZE{1024*1024*1024u};
+    constexpr static uint64_t ALLOC_SIZE = 1024*1024*1024u;
 
     /**
      * Allocate `size` bytes of memory
@@ -203,8 +204,29 @@ public:
     */
     uint64_t emptyChunksCount() const { return m_empty_chunks_count; } 
 
+    ChunkPair* findFreeChunk(uint64_t size, Chunk* old_chunk=nullptr) {
+        ChunkPair* new_chunk = nullptr;
+        for (auto* cur_chunk = m_chunks; 
+            cur_chunk != m_chunks->prev; // Might fail if m_chunks is nullptr 
+            cur_chunk = cur_chunk->next) {
+            if ((cur_chunk->state == ChunkState::FREE) && 
+                (cur_chunk->chunk.size() >= (size - CHUNK_HEADER_SIZE))) {
+                if (!new_chunk)
+                    new_chunk = cur_chunk;
+                else {
+                    if (cur_chunk->chunk.size() < new_chunk->chunk.size())
+                        new_chunk = cur_chunk;
+                }
+            }
+        }
+        return new_chunk;
+    }
+
 private:
-    ChunkPair*   getChunkPair();
+    // Try to avoid any friendship.
+    friend class ArenaList;
+
+    ChunkPair*   getChunkPair(Chunk* chunk);
     static void* allocMemory(uint64_t size);
     static void  releaseMemory(void* memory);
 
@@ -215,6 +237,9 @@ private:
     uint64_t   m_empty_chunks_count; 
     ChunkPair* m_chunks;
 };
+
+// NOTE: We need to maintain a chunk in order to avoid locking every single time
+// we push an element into memory. 
 
 class ArenaList {
 public:
@@ -228,63 +253,13 @@ public:
 
     Chunk*   getChunk(uint64_t size, Chunk* old_chunk);
     void     releaseChunk(Chunk* chunk);
-    uint64_t arenasCount() const; 
+    uint64_t arenasCount() const;
 
 private:
-    std::unique_ptr<Arena> m_arenas;
-    uint64_t               m_arenas_count;
-    mutable std::mutex     m_mutex;
+    // Could we avoid depending on std::list<> here?
+    uint64_t                          m_arenas_count = 0;
+    std::list<std::unique_ptr<Arena>> m_arenas;
+    mutable std::mutex                m_mutex;
 };
-
-#if 0
-//////////////////////////////////////////////////////////////////////////////////
-// Usage of the API
-template<class Object>
-class Array {
-public:
-    explicit Array(ArenaList* arena_list, size_t count=0);
-    Array(const Array& rhs);
-
-    void pushBack(const Object& obj);
-    void pushBack(Object&& obj);
-
-private:
-    ArenaList* m_arenas;
-    Chunk*     m_chunk;
-};
-
-
-class String {
-public:
-    explicit String(ArenaList* arena_list);
-    String(ArenaList* arena_list, std::string&& src);
-    String(ArenaList* arena_list, const std::string& src);
-
-    String& operator+=(const String&);
-    String& operator+=(const std::string&);
-    String& operator+=(const char*);
-    String& operator+=(const std::string_view);
-
-private:
-    ArenaList* m_arenas;
-    Chunk*     m_chunk;
-};
-
-String operator+(const String& a, const String& b) {
-
-}
-
-String operator+(const String& a, const std::string& b) {
-
-}
-
-String operator+(const String& a, std::string_view b) {
-
-}
-
-String operator+(const String& a, const char *b) {
-
-}
-#endif
 
 } // namespace mylib
