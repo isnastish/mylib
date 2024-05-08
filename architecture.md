@@ -19,3 +19,7 @@ While requesting for a new memory chunk, we iterate throgh all the available chu
 
 Regardless of the size specified when calling get_memory_chunk, the alignmend takes place and the initial size will be rounded to the  
 `mylib::MemoryArena::PAGE_SIZE`, which is currently 1Kib or 1024 bytes. Thus, if asking for 256bytes, a chunk of size 1024 will be created and returned.
+
+### Thread-safety
+The reason why we maintain a separate abstraction in a form of a chunk is so we can push objects to memory without locking a mutex. This is a way to achieve lock-free programming. So we are fully in control of our chunk that we've allocated. If we run out of space in a chunk that we (some data structure) owns, we should request a new chunk from arena and return the current one back using
+`getChunk()` API call.

@@ -10,16 +10,20 @@
 
 class ArenaFixture : public ::testing::Test {
 protected:
-    void SetUp() override;
-    void TearDown() override;
-
     constexpr static uint64_t m_small_arena_size{1024*10};
     constexpr static uint64_t m_medium_arena_size{1024*1024};
     constexpr static uint64_t m_large_arena_size{1024*1024*1024};
-    // constexpr static uint64_t m_chunk_header_size{sizeof(mylib::Chunk)};
 };
 
 using ArenaDeathFixture = ArenaFixture;
+
+TEST_F(ArenaFixture, Creation) {
+    mylib::Arena arena;
+    auto* chunk = arena.getChunk(1024);
+    ASSERT_EQ(arena.totalChunks(), 1);
+    arena.releaseChunk(chunk);
+    ASSERT_EQ(arena.emptyChunksCount(), 1);
+}
 
 #if 0
 TEST_F(ArenaFixture, ForceAlignSize) {
