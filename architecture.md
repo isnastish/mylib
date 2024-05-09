@@ -22,17 +22,18 @@ Memory allocations and deallocations are done through the calls to [VirtualAlloc
 
 A memory block keeps track of how many chunks it holds, their states and provides a functionality for acquiring/releasing them.
 
-#### Chunk header
+### Chunk header
 The `MemBlock::ChunkHeader` class is an abstraction around `Chunk` and a doubly linked list at the same time. It contains of a chunk, its state, and prev and next pointers in order to insert newly created chunks. While computing the size which should be allocated for the current chunk, the `sizeof(ChunkHeader)` is taken into a consideration. Let's take a look at an example. The client requests a chunk of a size 1024bytes(1Kib), we already know that each chunk contains a header (ChunkHeader), thus we have to add the size of the header to initially requested one and align it by the `Arena::PAGE_SIZE` which leads us with allocating a block of memory of 2048bytes or 2Kib. In this case 2048-sizeof(ChunkHeader) will be available for the client to use.
 
 ### Arena list
+A class `Arena` is the main API that clients will be interacting with, in particular `getChunk` and `releaseChunk` procedures. The arena is a doubly linked list of memory blocks, and this is the only place where we allocate an additional memory. Any call to its public method is thread-safe. Thus, if one thread is releasing a chunk, and another one tries to get a chunk, the second will wait for the chunk to be released, put into `FREE` state, and acquire it after.
 
 ## Thread-safety
 The reason why we maintain a separate abstraction in a form of a chunk is so we can push objects to memory without locking a mutex. This is a way to achieve lock-free programming. So we are fully in control of our chunk that we've allocated. If we run out of space in a chunk that we (some data structure) owns, we should request a new chunk from arena and return the current one back using
-`getChunk()` API call.
+`getChunk` API call.
 
 ## Possible future improvements
 >**TODO** 
 
 ## Useful resources
-For further learning about memory arenas, I highly recommend watching this playlist [General Purpose Allocation](https://www.youtube.com/watch?v=MvDUe2evkHg&list=PLEMXAbCVnmY6Azbmzj3BiC3QRYHE9QoG7&ab_channel=MollyRocket) from Casey Muratori, a C/C++ developer with more than 30 years of programminng experience.
+For further learning about memory arenas I highly recommend watching this playlist [General Purpose Allocation](https://www.youtube.com/watch?v=MvDUe2evkHg&list=PLEMXAbCVnmY6Azbmzj3BiC3QRYHE9QoG7&ab_channel=MollyRocket) from Casey Muratori, a C/C++ developer with more than 30 years of programminng experience.
