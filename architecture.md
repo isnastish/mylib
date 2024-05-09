@@ -8,9 +8,11 @@ Memory arenas are meant to increase the performance by reducing calls to the ope
 memory. Ideally, you would have to make a call only once, at a startup of your application or a game, usually the allocation size is 1Gib - 4Gib, but it can vary depending on your needs and limitations of the underlying system. That memory block is split into smaller sub-chunks which are served to the application on a request. Memory arena abstraction is responsible for acquiring and releasing those chunks. Arenas can be implemented in a way that allow auxiliary allocations in order to increase the overall size. If you run out of space in one memory block and there is no empty chunks left, a new call to the operating system will be issued to acquire an additional memory. Thus, multiple arenas can be accumulated together into a linked list data structure.
 
 ## Current implementation
-The current implementation is written with three things in mind, arenas have to be dynamically growable, threa-safe, in order to be used in a multithreaded environment and writing/reading data has to be lock-free. Based on that, I came up with three different abstractions.
+The current implementation is written with a couple of things in mind, arenas have to be dynamically growable, thread-safe, in order to be used in a multithreaded environment and writing/reading data has to be lock-free. In addition, the implementation shouldn't rely on any external memory allocations outside the space provided by arena itself, but this problem was only solved partically, see ## [Possible-future-improvements](./architecture.md#possible-future-improvements) section for more information. Based on that, I came up with three different abstractions.
 
 ### Chunk 
+The `Chunk` class is the main user-facing abstraction which is directly used to write data into the memory and read/iterate over it. It's the main responsibility of arena to make sure that if the client requests a memory chunk of a specific size, it gets it back, regardless whether it requires an additional memory allocation or simply finding a free chunk. The user only interacts with a memory through the pointer to a chunk, 
+which is stored inside the arena itself.
 
 ### Memory block
 
@@ -37,6 +39,7 @@ The reason why we maintain a separate abstraction in a form of a chunk is so we 
 `getChunk()` API call.
 
 ## Possible future improvements
+Avoid additional memory allocations and store everyting in memory provided by arena itself.
 
 ## Useful resources
 For further investigation about memory I highly recommend watching this playlist [General Purpose Allocation](https://www.youtube.com/watch?v=MvDUe2evkHg&list=PLEMXAbCVnmY6Azbmzj3BiC3QRYHE9QoG7&ab_channel=MollyRocket) from Casey Muratori, a developer with more than 30 years of programming experience.
