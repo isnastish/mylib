@@ -40,8 +40,7 @@ Chunk* Arena::getChunk(std::uint64_t size, Chunk* old_chunk) {
     //                              ^
     //                              |
     //                             m_pos
-    const std::uint64_t chunk_header_size = sizeof(MemBlock::ChunkHeader); 
-    std::uint64_t new_size = size + chunk_header_size;
+    std::uint64_t new_size = size + CHUNK_HEADER_SIZE;
     std::uint64_t rem = new_size % Arena::PAGE_SIZE;
     std::uint64_t new_aligned_size = (rem == 0) ? new_size : (new_size + Arena::PAGE_SIZE - rem);
     std::uint64_t page_count = new_aligned_size / Arena::PAGE_SIZE;
@@ -65,6 +64,7 @@ Chunk* Arena::getChunk(std::uint64_t size, Chunk* old_chunk) {
         std::uint64_t new_size = std::max(total_size, DEFAULT_ALLOC_SIZE);
         auto itr = m_blocks.insert(m_blocks.end(), std::make_unique<MemBlock>(new_size));
         potential_block = itr->get();
+        m_blocks_count += 1;
     }
 
     auto* new_chunk = potential_block->newChunk(total_size);
@@ -79,9 +79,12 @@ Chunk* Arena::getChunk(std::uint64_t size, Chunk* old_chunk) {
 
 void Arena::releaseChunk(Chunk* chunk) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    if (!m_blocks.empty()) {
-        auto itr = m_blocks.begin();
-        itr->get()->freeChunk(chunk);
+    if (!m_blocks.empty() && chunk) {
+        for (auto itr = m_blocks.begin(); itr != m_blocks.end(); itr++) {
+            Arena::MemBlock* block = itr->get();
+            if (block->freeChunk(chunk)) 
+                return;
+        }
     }
 }
 
@@ -103,13 +106,18 @@ std::uint64_t Arena::totalChunks() const {
     return total_chunks;
 }
 
+std::uint64_t Arena::totalBlocks() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_blocks.size();
+}
+
 Arena::MemBlock::MemBlock(std::uint64_t size) {
     std::uint64_t arena_size = sizeof(Arena::MemBlock); 
     std::uint64_t new_size = size + arena_size;
     std::uint64_t rem = new_size % PAGE_SIZE; 
     new_size += (rem == 0 ? 0 : PAGE_SIZE - rem);
     m_ptr = static_cast<std::byte*>(MemBlock::allocMemory(new_size));
-    m_cap = (new_size - arena_size);
+    m_cap = new_size;
     m_pos = 0;
 }
 
@@ -126,11 +134,10 @@ Chunk* Arena::MemBlock::newChunk(std::uint64_t size) {
     chunk_pair->chunk = Chunk(start, chunk_size);
     chunk_pair->state = Arena::MemBlock::ChunkState::IN_USE;
     if (m_chunks) {
+        chunk_pair->next = m_chunks;
         chunk_pair->prev = m_chunks->prev;
-        chunk_pair->next = m_chunks->prev;
-        if (m_chunks->prev) {
-            m_chunks->prev->next = chunk_pair;
-        }
+        m_chunks->prev->next = chunk_pair;
+        m_chunks->prev = chunk_pair;
     }
     else {
         m_chunks = chunk_pair;
@@ -139,42 +146,47 @@ Chunk* Arena::MemBlock::newChunk(std::uint64_t size) {
     }
 
     m_pos += size;
-
     m_total_chunks_count += 1;
 
     return &chunk_pair->chunk;
 }
 
-void Arena::MemBlock::freeChunk(Chunk* chunk) {
+bool Arena::MemBlock::freeChunk(Chunk* chunk) {
     if (chunk && m_chunks) {
         if (m_chunks == m_chunks->prev && (&m_chunks->chunk == chunk)) {
             m_chunks->state = ChunkState::FREE;
             m_chunks->chunk.reset();
             m_empty_chunks_count += 1;
-            return;
+            return true;
         }
 
-        for (ChunkHeader* chunk_header = m_chunks; 
-            chunk_header != m_chunks->prev;
+        for (auto* chunk_header = m_chunks;;
             chunk_header = chunk_header->next) {
             if ((chunk == &chunk_header->chunk) && (chunk_header->state == ChunkState::IN_USE)) {
                 chunk_header->state = ChunkState::FREE;
                 chunk_header->chunk.reset();
                 m_empty_chunks_count += 1;
+                return true;
+            }
+
+            if (chunk_header == m_chunks->prev) {
                 break;
             }
         }
     }
+    
+    return false;
 }
 
 std::optional<Chunk*> Arena::MemBlock::getEmptyChunk(std::uint64_t size) {
     if (m_chunks) {
+        const std::uint64_t chunk_size = size - CHUNK_HEADER_SIZE;
         ChunkHeader* chunk_header = nullptr;
-        for (auto* cur_header = m_chunks; 
-            cur_header != m_chunks->prev;  
+
+        for (auto* cur_header = m_chunks;; 
             cur_header = cur_header->next) {
             if ((cur_header->state == ChunkState::FREE) && 
-                (cur_header->chunk.size() >= (size - CHUNK_HEADER_SIZE))) {
+                (cur_header->chunk.size() >= chunk_size)) {
                 if (!chunk_header)
                     chunk_header = cur_header;
                 else {
@@ -182,7 +194,12 @@ std::optional<Chunk*> Arena::MemBlock::getEmptyChunk(std::uint64_t size) {
                         chunk_header = cur_header;
                 }
             }
+
+            if (cur_header == m_chunks->prev) {
+                break;
+            }
         }
+
         if (chunk_header) {
             chunk_header->state = ChunkState::IN_USE;
             m_empty_chunks_count -= 1;
@@ -228,11 +245,21 @@ Chunk::Chunk(std::byte* start, std::uint64_t size)
 : m_start(start), m_size(size), m_pos(0)
 {}
 
-void Chunk::copy(const Chunk* src_chunk, uint64_t size) {
+void Chunk::copy(const Chunk* src_chunk, std::uint64_t size) {
     assert(m_size > size);
     std::byte* start = (m_start + m_pos); 
     std::memcpy(start, src_chunk->m_start, size);
     m_pos += size;
+}
+
+void  Chunk::pop(std::uint64_t size) { 
+    assert(m_pos >= size);
+    m_pos -= size;
+}
+
+void Chunk::reset() { 
+    std::memset(m_start, 0, m_pos); 
+    m_pos = 0;
 }
 
 } // namespace mylib

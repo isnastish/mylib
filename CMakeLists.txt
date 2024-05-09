@@ -1,31 +1,28 @@
-# specify minimum cmake version
 cmake_minimum_required(VERSION 3.23)
 
-# sets C++ standard
 set(CMAKE_CXX_STANDARD 20)
 
-project("cpp_container_library")
+project("mylib")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-# Build a static container library
 add_library(
-    containers_lib
+    mylib
     STATIC
-    "./src/containers/growing_array.h"
-    "./src/containers/linked_list.h"
-    "./src/containers/hash_map.h"
-    "./src/containers/string.cpp"
-    "./src/containers/string.h"
-    "./src/containers/set.h"
-    "./src/containers/queue.h"
-    "./src/containers/stack.h"
-    "./src/containers/arena.h"
-    "./src/containers/arena.cpp"
+    "./src/mylib/growing_array.h"
+    "./src/mylib/linked_list.h"
+    "./src/mylib/hash_map.h"
+    "./src/mylib/string.cpp"
+    "./src/mylib/string.h"
+    "./src/mylib/set.h"
+    "./src/mylib/queue.h"
+    "./src/mylib/stack.h"
+    "./src/mylib/arena.h"
+    "./src/mylib/arena.cpp"
 )
 
 target_include_directories(
-    containers_lib
+    mylib
     PUBLIC
         "./src"
 )
@@ -38,13 +35,13 @@ add_executable(
 target_link_libraries(
     main
     PUBLIC
-        containers_lib
+        mylib
 )
 
 add_subdirectory("./ext/googletest/")
 
 add_executable(
-    test_containers
+    test_mylib
     "./test/test_growing_array.cpp"
     "./test/test_string.cpp"
     "./test/timer.h"
@@ -53,9 +50,9 @@ add_executable(
 )
 
 target_link_libraries(
-    test_containers
+    test_mylib
     PUBLIC
-        containers_lib
+        mylib
         gtest
         gtest_main
 )
@@ -63,5 +60,5 @@ target_link_libraries(
 include(GoogleTest)
 
 gtest_discover_tests(
-    test_containers
+    test_mylib
 )

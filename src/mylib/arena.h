@@ -1,27 +1,16 @@
-/*
-*
-*
-*
-*
-*/
-
 #pragma once
 
 #include <cstdint>
 #include <cstring>
-#include <iterator>
 #include <list>
 #include <mutex>
 #include <cassert>
 #include <type_traits>
-#include <algorithm>
-#include <utility>
 #include <memory> // std::unique_ptr
 #include <optional> // std::optional
 
 namespace mylib
 {
-
 class Chunk {
 public:
     Chunk(std::byte* start, std::uint64_t size);
@@ -33,9 +22,10 @@ public:
      * @param size Object's size.
     */
     template<class Object>
-    void push(const Object& obj, uint64_t size) {
+    void push(const Object& obj) {
+        constexpr std::size_t size = sizeof(Object);
         assert((m_pos + size) <= m_size);
-        *(Object *)(m_start + m_pos) = obj;
+        *reinterpret_cast<Object*>(m_start + m_pos) = obj;
         m_pos += size;
     }
 
@@ -45,9 +35,10 @@ public:
      * @param size Object's size.
     */
     template<class Object>
-    void push(Object&& obj, uint64_t size) {
+    void push(Object&& obj) {
+        constexpr std::size_t size = sizeof(Object);
         assert((m_pos + size) <= m_size);
-        *(Object *)(m_start + m_pos) = std::move(obj);
+        *reinterpret_cast<Object*>(m_start + m_pos) = std::move(obj);
         m_pos += size;
     }
 
@@ -56,10 +47,7 @@ public:
      * Asserts if `m_pos` less than size.
      * @param size Size of the previously inserted object.
     */
-    void pop(uint64_t size) { 
-        assert(m_pos >= size);
-        m_pos -= size;
-    }
+    void pop(std::uint64_t size); 
 
     /**
      * @return A const pointer to the beginning of the memory chunk.  
@@ -108,7 +96,7 @@ public:
     /**
      * 
     */
-    void reset() { std::memset(m_start, 0, m_pos); m_pos = 0; }
+    void reset();
 
 private:
     std::byte*    m_start;
@@ -116,8 +104,19 @@ private:
     std::uint64_t m_pos;
 };
 
-class Arena {   
+class Arena {
     class MemBlock {
+        enum class ChunkState : std::uint8_t {
+            IN_USE,
+            FREE
+        };
+        
+        struct ChunkHeader {
+            Chunk        chunk;
+            ChunkState   state;
+            ChunkHeader* next;
+            ChunkHeader* prev;
+        };
     public:
         explicit MemBlock(std::uint64_t size);
         ~MemBlock();
@@ -126,7 +125,7 @@ class Arena {
         MemBlock& operator=(const MemBlock&) = delete;
         
         Chunk*                newChunk(std::uint64_t size);
-        void                  freeChunk(Chunk* chunk);
+        bool                  freeChunk(Chunk* chunk);
         std::optional<Chunk*> getEmptyChunk(std::uint64_t size);
         std::uint64_t         totalChunks() const;
         std::uint64_t         emptyChunksCount() const;
@@ -135,18 +134,6 @@ class Arena {
     private:
         friend class Arena;
 
-        enum class ChunkState : std::uint8_t {
-            IN_USE,
-            FREE
-        };
-        
-        struct ChunkHeader {
-            Chunk      chunk;
-            ChunkState state;
-            ChunkHeader* next;
-            ChunkHeader* prev;
-        };
-        
         static void* allocMemory(std::uint64_t size);
         static void  releaseMemory(void* memory);
 
@@ -159,6 +146,10 @@ class Arena {
     };
     
 public:
+    constexpr static std::uint64_t CHUNK_HEADER_SIZE{sizeof(MemBlock::ChunkHeader)};
+    constexpr static std::uint64_t PAGE_SIZE{1024u};
+    constexpr static std::uint64_t DEFAULT_ALLOC_SIZE{1024*1024*1024u};
+    
     Arena(std::uint64_t size=DEFAULT_ALLOC_SIZE);
 
     Arena(const Arena&) = delete;
@@ -171,12 +162,9 @@ public:
     void          releaseChunk(Chunk* chunk);
     std::uint64_t emptyChunksCount() const;
     std::uint64_t totalChunks() const;
+    std::uint64_t totalBlocks() const;
 
 private:
-    constexpr static std::uint64_t PAGE_SIZE{1024u};
-    constexpr static std::uint64_t DEFAULT_ALLOC_SIZE{1024*1024*1024u};
-    constexpr static std::uint64_t CHUNK_HEADER_SIZE{sizeof(MemBlock::ChunkHeader)};
-
     std::uint64_t                        m_blocks_count = 0;
     std::list<std::unique_ptr<MemBlock>> m_blocks;
     mutable std::mutex                   m_mutex;
