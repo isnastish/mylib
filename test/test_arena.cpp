@@ -40,7 +40,7 @@ TEST_F(ArenaFixture, AlignChunkSize) {
 TEST_F(ArenaFixture, ForceArenaToGrow) {
     mylib::Arena arena(m_small_arena_size);
     std::vector<mylib::Chunk*> chunks;
-    constexpr std::int32_t CHUNKS_COUNT = 4;  
+    constexpr std::int32_t CHUNKS_COUNT = 4;
     chunks.reserve(CHUNKS_COUNT);
     for (int i = 0; i < CHUNKS_COUNT; i++) {
         chunks.push_back(arena.getChunk(mylib::Arena::PAGE_SIZE));
@@ -186,4 +186,3 @@ TEST_F(ArenaFixture, ThreadSafety) {
     std::for_each(threads.begin(), threads.end(), std::mem_fn(&std::thread::join));
     ASSERT_EQ(arena.emptyChunksCount(), THREAD_COUNT*CHUNK_COUNT);
 }
-
