@@ -28,11 +28,11 @@ Arena& Arena::operator=(Arena&& rhs) {
 Chunk* Arena::getChunk(std::uint64_t size, Chunk* old_chunk) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    // NOTE: Compute a total allocation size taking into account an alignment.
-    // If a chunk is nullptr, we include the size of the Chunk into the total allocation size.
+    // NOTE: Compute a total allocation size taking into consideration an alignment.
+    // If a chunk is nullptr, we include the size of the MemBlock::ChunkHeader into the total allocation size.
     // Thus, if requested size is equal to 1024, which is exactly the size of a single page (PAGE_SIZE), 
-    // two pages will be allocated, comprising the size of 2048bytes in total,
-    // because Chunk sturuct occupies 24bytes, thus 1024+24 = 1048 aligned by PAGE_SIZE would be 2048, or 2*PAGE_SIZE.
+    // two pages will be allocated comprising the size of 2048bytes(2Kib) in total,
+    // because we have to fit a ChunkHeader struct.
     // +--------+-------------------+------------------------------------------------------------+
     // | chunk  |         size      |                      empty space                           |
     // | header |         size      |                      empty space                           |
