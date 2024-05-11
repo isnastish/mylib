@@ -6,6 +6,9 @@ project("mylib")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+add_subdirectory("./ext/googletest/")
+add_subdirectory("./ext/fmt/")
+
 add_library(
     mylib
     STATIC
@@ -19,6 +22,12 @@ add_library(
     "./src/mylib/stack.h"
     "./src/mylib/arena.h"
     "./src/mylib/arena.cpp"
+)
+
+target_link_libraries(
+    mylib
+    PUBLIC
+        fmt
 )
 
 target_include_directories(
@@ -38,8 +47,6 @@ target_link_libraries(
         mylib
 )
 
-add_subdirectory("./ext/googletest/")
-
 add_executable(
     test_mylib
     "./test/test_growing_array.cpp"
@@ -54,6 +61,7 @@ target_link_libraries(
     PUBLIC
         mylib
         gtest
+        fmt
         gtest_main
 )
 

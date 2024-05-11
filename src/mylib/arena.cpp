@@ -1,5 +1,8 @@
 #include "arena.h"
 
+#include <fmt/core.h>
+#include <stdexcept>
+
 #ifdef _WIN32
 # define WIN32_LEAN_AND_MEAN
 # include <windows.h>
@@ -7,8 +10,19 @@
 # undef min
 #endif
 
+namespace
+{
+class allocation_error : public std::exception {
+public:
+    explicit allocation_error(const char* msg) noexcept 
+    : std::exception(msg)
+    {}
+};
+}
+
 namespace mylib
 {
+
 Arena::Arena(std::uint64_t size) {
     m_blocks.push_back(std::make_unique<MemBlock>(size));
     m_blocks_count += 1;
@@ -69,8 +83,14 @@ Chunk* Arena::getChunk(std::uint64_t size, Chunk* old_chunk) {
 
     auto* new_chunk = potential_block->newChunk(total_size);
 
+    // NOTE: Presumably, this shouldn't be the responsibility of arena to copy the data.
+    // The one who owns the old chunk should copy before releasing it.
+    // new_chunk = arena->getChunk(old_chunk->size() * 2);
+    // new_chunk->copy(old_chunk);
+    // arena->releaseChunk(old_chunk);
+    // But maybe it's convenient to keep it here.
     if (old_chunk) {
-        new_chunk->copy(old_chunk, old_chunk->occupied());
+        new_chunk->copy(old_chunk);
         potential_block->freeChunk(old_chunk);
     }
 
@@ -229,7 +249,8 @@ void* Arena::MemBlock::allocMemory(uint64_t size) {
     void *memory = malloc(size);
     std::memset(memory, 0, size);
 #endif
-    assert(memory);
+    if (!memory) 
+        throw allocation_error(fmt::format("failed to allocate memory block of size {}", size).c_str());
     return memory;
 }
 
@@ -241,25 +262,31 @@ void Arena::MemBlock::releaseMemory(void *memory) {
 #endif
 }
 
-Chunk::Chunk(std::byte* start, std::uint64_t size)
+Chunk::Chunk(std::byte* start, std::uint64_t size) noexcept
 : m_start(start), m_size(size), m_pos(0)
 {}
 
-void Chunk::copy(const Chunk* src_chunk, std::uint64_t size) {
-    assert(m_size > size);
-    std::byte* start = (m_start + m_pos); 
-    std::memcpy(start, src_chunk->m_start, size);
-    m_pos += size;
+void Chunk::copy(const Chunk* src_chunk) {
+    if (m_size < src_chunk->size())
+        throw std::length_error(fmt::format("destination chunk doesn't have enough space, required {}", src_chunk->size()));
+    std::memcpy(m_start, src_chunk->m_start, src_chunk->size());
+    m_pos = src_chunk->m_pos;
 }
 
-void  Chunk::pop(std::uint64_t size) { 
-    assert(m_pos >= size);
+void Chunk::pop(std::uint64_t size) { 
+    if (m_pos >= size)
+        throw std::length_error(fmt::format("the size to be deducted {} exceeds the current size {}", size, m_pos));
     m_pos -= size;
 }
 
 void Chunk::reset() { 
     std::memset(m_start, 0, m_pos); 
     m_pos = 0;
+}
+
+void Chunk::doesFit(std::uint64_t size) const {
+    if ((m_pos + size) > m_size)
+        throw std::length_error(fmt::format("not enough space to insert an object of size {}", size));
 }
 
 } // namespace mylib

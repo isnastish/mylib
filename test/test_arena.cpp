@@ -12,6 +12,7 @@ protected:
     constexpr static std::uint64_t m_large_arena_size{1024u*1024u*1024u};
 };
 
+using ArenaDeathFixture = ArenaFixture;
 
 TEST_F(ArenaFixture, Creation) {
     mylib::Arena arena;
@@ -132,57 +133,48 @@ TEST_F(ArenaFixture, SelectMostOptimalChunkAcrossMultipleMemoryBlocks) {
     ASSERT_EQ(arena.emptyChunksCount(), 13);
 }
 
-struct ChunkStorage {
-    std::vector<mylib::Chunk*> chunks;
-    std::mutex mu;
-};
-
 TEST_F(ArenaFixture, ThreadSafety) {
     constexpr std::uint64_t CHUNK_SIZE = (mylib::Arena::PAGE_SIZE - mylib::Arena::CHUNK_HEADER_SIZE);
-    constexpr std::uint64_t CHUNK_COUNT = 5;
-
-    ChunkStorage storage;
-    auto createChunks = [&storage](mylib::Arena* arena) {
-        // We shouldn't protect access to the arena itself while getting the chunk, 
-        // because then we won't be able to test whether it's thread-safe or not. 
-        // On the other hand, storage of chunks has to be protected.
-        for (std::int32_t i = 0; i < CHUNK_COUNT; i++) {
+    constexpr std::int32_t THREAD_COUNT = 10;
+    constexpr std::int32_t ARR_SIZE = THREAD_COUNT*THREAD_COUNT;
+    mylib::Chunk *arr[ARR_SIZE]{};
+    auto createChunks = [&arr](mylib::Arena* arena, std::int32_t index) {
+        for(int i = 0; i < THREAD_COUNT; i++) {
             auto* chunk = arena->getChunk(CHUNK_SIZE);
-            storage.mu.lock();
-            storage.chunks.push_back(chunk);
-            storage.mu.unlock();
+            arr[index+i] = chunk;
         }
     };
 
     // Iterate through all the chunks and release if they satisfy the size requirement. 
     // Essentially, we have to test whether releasing chunks is thread-safe, 
     // meaning that the same chunk cannot be released twice by multiple threads.
-    // We shouldn't lock storage's mutex, since we only iterating over the vector.
-    auto releaseChunks = [&storage](mylib::Arena* arena) {
-        for (auto itr = storage.chunks.begin(); 
-            itr != storage.chunks.end();
-            itr++) {
-            arena->releaseChunk(*itr);
+    auto releaseChunks = [&arr](mylib::Arena* arena, std::int32_t index) {
+        for (int i = 0; i < THREAD_COUNT; i++) {
+            arena->releaseChunk(arr[index+i]);
         }
     };
 
     mylib::Arena arena(m_small_arena_size);
-    constexpr std::int32_t THREAD_COUNT = 10;
     std::vector<std::thread> threads;
     threads.reserve(THREAD_COUNT);
-    for (std::int32_t i = 1; i <= THREAD_COUNT; i++) {
-        threads.push_back(std::thread(createChunks, &arena));
+    for (std::int32_t i = 0; i < THREAD_COUNT; i++) {
+        threads.push_back(std::thread(createChunks, &arena, i*10));
     }
     std::for_each(threads.begin(), threads.end(), std::mem_fn(&std::thread::join));
     ASSERT_EQ(arena.totalBlocks(), 2);
-    ASSERT_EQ(arena.totalChunks(), THREAD_COUNT*CHUNK_COUNT);
+    ASSERT_EQ(arena.totalChunks(), THREAD_COUNT*THREAD_COUNT);
     ASSERT_EQ(arena.emptyChunksCount(), 0);
 
     // release memory chunks
     threads.clear();
-    for (std::int32_t i = 1; i <= THREAD_COUNT; i++) {
-        threads.push_back(std::thread(releaseChunks, &arena));
+    for (std::int32_t i = 0; i < THREAD_COUNT; i++) {
+        threads.push_back(std::thread(releaseChunks, &arena, i*10));
     }
     std::for_each(threads.begin(), threads.end(), std::mem_fn(&std::thread::join));
-    ASSERT_EQ(arena.emptyChunksCount(), THREAD_COUNT*CHUNK_COUNT);
+    ASSERT_EQ(arena.emptyChunksCount(), THREAD_COUNT*THREAD_COUNT);
+}
+
+// TODO: Add tests for memory chunks
+TEST_F(ArenaDeathFixture, WriteOutsideChunkBoundaries) {
+
 }

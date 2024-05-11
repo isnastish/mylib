@@ -1,11 +1,8 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
 #include <list>
 #include <mutex>
-#include <cassert>
-#include <type_traits>
 #include <memory> // std::unique_ptr
 #include <optional> // std::optional
 
@@ -13,92 +10,84 @@ namespace mylib
 {
 class Chunk {
 public:
-    Chunk(std::byte* start, std::uint64_t size);
-
     /**
-     * Push an object into the memory, incrementing the current position.
-     * Asserts if the current position plus size greater than memory size.
+     * Push an object into the memory incrementing the current position.
+     * @throw std::length_error If not enough space for placing the object. 
      * @param obj An object to be inserted.
      * @param size Object's size.
     */
     template<class Object>
     void push(const Object& obj) {
-        constexpr std::size_t size = sizeof(Object);
-        assert((m_pos + size) <= m_size);
+        doesFit(sizeof(obj));
         *reinterpret_cast<Object*>(m_start + m_pos) = obj;
-        m_pos += size;
+        m_pos += sizeof(obj);
     }
 
     /**
      * The same as the function above, but the object is std::move(ed) into the memory.
+     * @throw std::length_error If not enough space for placing the object. 
      * @param obj An object to be moved.
      * @param size Object's size.
     */
     template<class Object>
     void push(Object&& obj) {
-        constexpr std::size_t size = sizeof(Object);
-        assert((m_pos + size) <= m_size);
+        doesFit(sizeof(obj));
         *reinterpret_cast<Object*>(m_start + m_pos) = std::move(obj);
-        m_pos += size;
+        m_pos += sizeof(obj);
     }
 
     /**
      * Pop element from the memory by decrementing the position.
-     * Asserts if `m_pos` less than size.
+     * @throw std::length_error If trying to pop on an empty chunk. 
      * @param size Size of the previously inserted object.
     */
-    void pop(std::uint64_t size); 
+    void pop(std::uint64_t size);
 
     /**
      * @return A const pointer to the beginning of the memory chunk.  
     */
-    const std::byte* begin() const { return m_start; }
+    const std::byte* begin() const noexcept { return m_start; }
 
     /**
      * @return A const pointer to the end of the memory chunk.
     */
-    const std::byte* end() const { return (m_start + m_pos); }
+    const std::byte* end() const noexcept { return m_start + m_pos; }
 
     /**
      * @return A pointer to the beginning of the memory chunk. 
     */
-    std::byte* begin() { return m_start; }
+    std::byte* begin() noexcept { return m_start; }
 
     /**
      * @return A pointer to the end of already occupied memory. 
     */
-    std::byte* end() { return (m_start + m_pos); }
+    std::byte* end() noexcept { return m_start + m_pos; }
 
     /**
      * Compute the size of the remaining space in a chunk.
      * @return number of bytes remaining bytes.
     */
-    std::uint64_t remaining() const { return m_size - m_pos; }
+    std::uint64_t remainingSpace() const noexcept { return m_size - m_pos; }
     
     /**
      * @return Total chunk size.
     */
-    std::uint64_t size() const { return m_size; }
-
-    /**
-     * @return How much space is already occupied.
-    */
-    std::uint64_t occupied() const { return size() - remaining(); }
+    std::uint64_t size() const noexcept { return m_size; }
 
     /**
      * Copies the data residing in a source chunk, supplied as an argument
      * to the current chunk. Adjusts the position of the current chunk accordingly.
      * @param src_chunk Memory chunk to copy the data from.
-     * @param size Size of the data to be copied.
     */
-    void copy(const Chunk* src_chunk, uint64_t size);
-
-    /**
-     * 
-    */
+    void copy(const Chunk* src_chunk);
     void reset();
 
 private:
+    friend class Arena;
+
+    Chunk(std::byte* start, std::uint64_t size) noexcept;
+    void doesFit(std::uint64_t size) const;
+
     std::byte*    m_start;
     std::uint64_t m_size;
     std::uint64_t m_pos;
