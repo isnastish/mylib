@@ -1,5 +1,5 @@
-#include "./containers/arena.h"
-#include "./containers/growing_array.h"
+#include "./mylib/arena.h"
+#include "./mylib/growing_array.h"
 
 int main() {
     return 0;
