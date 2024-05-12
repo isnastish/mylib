@@ -1,4 +1,5 @@
 #include <mylib/arena.h>
+#include <fmt/core.h>
 #include <gtest/gtest.h>
 #include <vector>
 #include <algorithm>
@@ -174,7 +175,31 @@ TEST_F(ArenaFixture, ThreadSafety) {
     ASSERT_EQ(arena.emptyChunksCount(), THREAD_COUNT*THREAD_COUNT);
 }
 
-// TODO: Add tests for memory chunks
-TEST_F(ArenaDeathFixture, WriteOutsideChunkBoundaries) {
+struct Aggregate {
+    std::uint64_t u64;
+    const char* ptr;
+    std::string str1;
+    std::string str2;
+    void (*fptr)(std::string&, std::string&);
+};
 
+
+TEST_F(ArenaDeathFixture, OverflowChunkSizeWithPush) {
+    constexpr std::uint64_t chunk_size = 512;
+    mylib::Arena arena(m_small_arena_size);
+    auto* chunk = arena.getChunk(chunk_size);
+    auto populateChunk = [&chunk]() {
+        for (std::uint64_t i = 0; i < 15; i++) {
+            Aggregate ag{.u64 = i, .str1 = fmt::format("string_{}", i), .str2 =  fmt::format("STRING_{}", i<<2)};
+            chunk->push(std::move(ag));
+        }
+    };
+    ASSERT_THROW(populateChunk(), std::length_error);
+}
+
+TEST_F(ArenaDeathFixture, PopOnEmptyChunk) {
+    constexpr std::uint64_t chunk_size = 2028;
+    mylib::Arena arena(m_small_arena_size);
+    auto* chunk = arena.getChunk(chunk_size);
+    ASSERT_THROW(chunk->pop(chunk_size / 2), std::length_error);
 }

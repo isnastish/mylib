@@ -274,12 +274,12 @@ void Chunk::copy(const Chunk* src_chunk) {
 }
 
 void Chunk::pop(std::uint64_t size) { 
-    if (m_pos >= size)
+    if (m_pos < size)
         throw std::length_error(fmt::format("the size to be deducted {} exceeds the current size {}", size, m_pos));
     m_pos -= size;
 }
 
-void Chunk::reset() { 
+void Chunk::reset() noexcept { 
     std::memset(m_start, 0, m_pos); 
     m_pos = 0;
 }

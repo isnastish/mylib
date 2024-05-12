@@ -56,16 +56,12 @@ public:
         const_iterator(Object* object, Chunk** chunkp) 
         : m_object(object), m_chunkp(chunkp), m_old_chunk(*chunkp) {}
 
-        // TODO: Chunks should be const
         Object* m_object;
         Chunk** m_chunkp;
         Chunk* m_old_chunk;
         friend class GrowingArray<Object>;
     };
 
-    /**
-     * 
-    */
     class iterator : public const_iterator {
     public:
         iterator() {}

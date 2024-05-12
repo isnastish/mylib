@@ -16,7 +16,7 @@ public:
      * @param obj An object to be inserted.
      * @param size Object's size.
     */
-    template<class Object>
+    template<typename Object>
     void push(const Object& obj) {
         doesFit(sizeof(obj));
         *reinterpret_cast<Object*>(m_start + m_pos) = obj;
@@ -29,13 +29,13 @@ public:
      * @param obj An object to be moved.
      * @param size Object's size.
     */
-    template<class Object>
+    template<typename Object>
     void push(Object&& obj) {
         doesFit(sizeof(obj));
         *reinterpret_cast<Object*>(m_start + m_pos) = std::move(obj);
         m_pos += sizeof(obj);
     }
-
+    
     /**
      * Pop element from the memory by decrementing the position.
      * @throw std::length_error If trying to pop on an empty chunk. 
@@ -80,7 +80,7 @@ public:
      * @param src_chunk Memory chunk to copy the data from.
     */
     void copy(const Chunk* src_chunk);
-    void reset();
+    void reset() noexcept;
 
 private:
     friend class Arena;
