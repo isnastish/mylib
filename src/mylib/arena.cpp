@@ -147,7 +147,7 @@ Arena::MemBlock::~MemBlock() {
     }
 }
 
-Chunk* Arena::MemBlock::newChunk(std::uint64_t size) {
+Chunk* Arena::MemBlock::newChunk(std::uint64_t size) noexcept {
     auto* chunk_pair = reinterpret_cast<Arena::MemBlock::ChunkHeader*>(m_ptr + m_pos);
     std::byte* start = m_ptr + CHUNK_HEADER_SIZE;
     std::uint64_t chunk_size = size - CHUNK_HEADER_SIZE;
@@ -171,7 +171,7 @@ Chunk* Arena::MemBlock::newChunk(std::uint64_t size) {
     return &chunk_pair->chunk;
 }
 
-bool Arena::MemBlock::freeChunk(Chunk* chunk) {
+bool Arena::MemBlock::freeChunk(Chunk* chunk) noexcept {
     if (chunk && m_chunks) {
         if (m_chunks == m_chunks->prev && (&m_chunks->chunk == chunk)) {
             m_chunks->state = ChunkState::FREE;
@@ -198,7 +198,7 @@ bool Arena::MemBlock::freeChunk(Chunk* chunk) {
     return false;
 }
 
-std::optional<Chunk*> Arena::MemBlock::getEmptyChunk(std::uint64_t size) {
+std::optional<Chunk*> Arena::MemBlock::getEmptyChunk(std::uint64_t size) noexcept {
     if (m_chunks) {
         const std::uint64_t chunk_size = size - CHUNK_HEADER_SIZE;
         ChunkHeader* chunk_header = nullptr;
@@ -230,15 +230,15 @@ std::optional<Chunk*> Arena::MemBlock::getEmptyChunk(std::uint64_t size) {
     return {}; 
 }
 
-std::uint64_t Arena::MemBlock::totalChunks() const {
+std::uint64_t Arena::MemBlock::totalChunks() const noexcept {
     return m_total_chunks_count;
 }
 
-std::uint64_t Arena::MemBlock::emptyChunksCount() const {
+std::uint64_t Arena::MemBlock::emptyChunksCount() const noexcept {
     return m_empty_chunks_count;
 }
 
-std::uint64_t Arena::MemBlock::remainingSpace() const {
+std::uint64_t Arena::MemBlock::remainingSpace() const noexcept {
     return (m_cap - m_pos);
 }
 

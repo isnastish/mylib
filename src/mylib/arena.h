@@ -113,12 +113,12 @@ class Arena {
         MemBlock(const MemBlock&) = delete;
         MemBlock& operator=(const MemBlock&) = delete;
         
-        Chunk*                newChunk(std::uint64_t size);
-        bool                  freeChunk(Chunk* chunk);
-        std::optional<Chunk*> getEmptyChunk(std::uint64_t size);
-        std::uint64_t         totalChunks() const;
-        std::uint64_t         emptyChunksCount() const;
-        std::uint64_t         remainingSpace() const;
+        Chunk*                newChunk(std::uint64_t size) noexcept;
+        bool                  freeChunk(Chunk* chunk) noexcept;
+        std::optional<Chunk*> getEmptyChunk(std::uint64_t size) noexcept;
+        std::uint64_t         totalChunks() const noexcept;
+        std::uint64_t         emptyChunksCount() const noexcept;
+        std::uint64_t         remainingSpace() const noexcept;
 
     private:
         friend class Arena;
@@ -147,7 +147,7 @@ public:
     Arena(Arena&& rhs); 
     Arena& operator=(Arena&& rhs);
 
-    Chunk*        getChunk(uint64_t size, Chunk* old_chunk=nullptr);
+    Chunk*        getChunk(std::uint64_t size, Chunk* old_chunk=nullptr);
     void          releaseChunk(Chunk* chunk);
     std::uint64_t emptyChunksCount() const;
     std::uint64_t totalChunks() const;
