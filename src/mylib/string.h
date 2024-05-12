@@ -1,5 +1,6 @@
 #pragma once
 
+#include "arena.h"
 #include <ostream>
 #include <initializer_list>
 
@@ -31,8 +32,10 @@ public:
 private:
     void zeroMembers();
 
-    char *m_data{nullptr};
-    size_t m_size;
+    Arena* m_arena;
+    Chunk* m_memory;
+    char *m_data{nullptr}; // remove
+    size_t m_size; 
 };
 
 } // namespace mylib

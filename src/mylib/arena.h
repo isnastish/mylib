@@ -35,23 +35,13 @@ public:
         *reinterpret_cast<Object*>(m_start + m_pos) = std::move(obj);
         m_pos += sizeof(obj);
     }
-    
+
     /**
      * Pop element from the memory by decrementing the position.
      * @throw std::length_error If trying to pop on an empty chunk. 
      * @param size Size of the previously inserted object.
     */
     void pop(std::uint64_t size);
-
-    /**
-     * @return A const pointer to the beginning of the memory chunk.  
-    */
-    const std::byte* begin() const noexcept { return m_start; }
-
-    /**
-     * @return A const pointer to the end of the memory chunk.
-    */
-    const std::byte* end() const noexcept { return m_start + m_pos; }
 
     /**
      * @return A pointer to the beginning of the memory chunk. 
@@ -80,6 +70,10 @@ public:
      * @param src_chunk Memory chunk to copy the data from.
     */
     void copy(const Chunk* src_chunk);
+
+    /**
+     * 
+    */
     void reset() noexcept;
 
 private:
@@ -95,11 +89,17 @@ private:
 
 class Arena {
     class MemBlock {
+        /**
+         * 
+        */
         enum class ChunkState : std::uint8_t {
             IN_USE,
             FREE
         };
         
+        /**
+         * 
+        */
         struct ChunkHeader {
             Chunk        chunk;
             ChunkState   state;

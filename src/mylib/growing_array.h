@@ -9,182 +9,193 @@
 
 namespace mylib
 {
-namespace detail 
+namespace detail
 {
-class invalid_iterator : public std::exception {
-public: 
-    invalid_iterator() noexcept {}
-
-    explicit invalid_iterator(const char *msg) noexcept 
-    : std::exception(msg) {}
+class invalid_iterator_error : public std::exception {
+public:
+    explicit invalid_iterator_error(const char* m)
+    : std::exception(m)
+    {}
 };
-} // namespace detail
+}
 
 template<class Object>
-class GrowingArray
-{
+class GrowingArray {
 public:
     /**
      * 
     */
-    class const_iterator {
-    public:
-        const_iterator() : m_object(nullptr), m_chunkp(nullptr) {}
-        
-        const Object& operator*() const { return static_cast<const Object&>(*m_object); }
+    class const_iterator;
 
-        const_iterator& operator++() {
-            if (*m_chunkp != m_old_chunk) {
-                throw detail::invalid_iterator();
-            }
-            
-            m_object++; 
-            return *this; 
-        }
-        const_iterator operator++(int /*postfix*/) { const_iterator old_this = *this; ++(*this); return old_this; }
-        const_iterator operator--()                { isValid(); m_object--; return *this; }
-        const_iterator operator--(int /*postfix*/) { const_iterator old_this = *this; --(*this); return old_this; }
+    /**
+     * 
+    */
+    class iterator;
 
-        bool operator==(const const_iterator& rhs) const { return (m_object == rhs.m_object); }
-        bool operator!=(const const_iterator& rhs) const { return !(*this == rhs); }
+    /**
+     * 
+    */
+    explicit GrowingArray(Arena* arena) noexcept
+     : m_arena(arena), m_chunk(nullptr), m_size(0), m_cap(0) {}
 
-    protected:
-        void isValid() const {
-            if (m_object == nullptr) throw std::out_of_range("iterator is nullptr"); 
-        }
-
-        const_iterator(Object* object, Chunk** chunkp) 
-        : m_object(object), m_chunkp(chunkp), m_old_chunk(*chunkp) {}
-
-        Object* m_object;
-        Chunk** m_chunkp;
-        Chunk* m_old_chunk;
-        friend class GrowingArray<Object>;
-    };
-
-    class iterator : public const_iterator {
-    public:
-        iterator() {}
-
-        Object& operator*()             { return const_cast<Object&>(const_iterator::operator*()); }
-        const Object& operator*() const { return const_iterator::operator*(); }
-
-        iterator& operator++()               { const_iterator::m_object++; return *this; }
-        iterator operator++(int /*postfix*/) { iterator old_this = *this; ++(*this); return old_this; }
-        iterator& operator--()               { const_iterator::isValid(); const_iterator::m_object--; return *this; }
-        iterator operator--(int /*postfix*/) { const_iterator::isValid(); iterator old_this = *this; --(*this); return old_this; }
-
-    protected:
-        friend class GrowingArray<Object>;
-        iterator(Object* object) : const_iterator(object) {}
-    };
-
-    iterator begin() { 
-        return (m_chunk != 0) ? iterator(reinterpret_cast<Object*>(m_chunk->begin(), &m_chunk)) : iterator(); 
+    /**
+     * 
+    */
+    ~GrowingArray() noexcept {
+        if (m_chunk) m_arena->releaseChunk(m_chunk);
     }
 
-    iterator end() { 
-        return (m_chunk != 0) ? iterator(reinterpret_cast<Object*>(m_chunk->end(), &m_chunk)) : iterator(); 
-    }
-
-    const_iterator begin() const { return (m_chunk != 0) ? const_iterator(reinterpret_cast<Object*>(m_chunk->begin())) : const_iterator(); }
-    const_iterator end() const { return (m_chunk != 0) ? const_iterator(reinterpret_cast<Object*>(m_chunk->end())) : const_iterator(); }
-
-    // TODO: Reserve memory chunk in the beginning.
-    explicit GrowingArray(Arena* arena)
-     : m_arena(arena), m_chunk(nullptr), m_size(0) {}
-
-    ~GrowingArray() {
-        if (m_chunk)
-            m_arena->releaseChunk(m_chunk);
-    }
-
-    GrowingArray(const GrowingArray<Object>& rhs) {
+    /**
+     * 
+    */
+    GrowingArray(const GrowingArray<Object>& rhs) noexcept {
         m_arena = rhs.m_arena;
         if (rhs.m_chunk) {
             m_chunk = rhs.m_arena->getChunk(rhs.m_chunk->size());
             m_chunk->copy(rhs.m_chunk);
+            m_size = rhs.m_size;
         }
-        m_size = rhs.m_size;
     }
 
-    GrowingArray& operator=(const GrowingArray<Object>& rhs) {
-        if (m_chunk) 
-            m_arena->releaseChunk(m_chunk);
-        if (rhs.m_chunk) {
-            m_chunk = m_arena->getChunk(rhs.m_chunk->size());
-            m_chunk->copy(rhs.m_chunk);
-        }
-        m_size = rhs.m_size;
+    /**
+     * 
+    */
+    GrowingArray& operator=(const GrowingArray<Object>& rhs) noexcept { init(rhs); return *this; }
+
+    /**
+     * 
+    */
+    GrowingArray(GrowingArray&& rhs) noexcept {
+        m_arena = rhs.m_arena; m_chunk = rhs.m_chunk; m_size = rhs.m_size;
+        rhs.m_chunk = nullptr; rhs.m_size = rhs.m_cap = 0;
+    }
+
+    /**
+     * 
+    */
+    GrowingArray& operator=(GrowingArray&& rhs) noexcept {
+        init(rhs); rhs.m_chunk = nullptr; 
+        rhs.m_size = rhs.m_cap = 0;
         return *this;
     }
 
-    GrowingArray(GrowingArray&& rhs) {
-        m_arena = rhs.m_arena;
-        m_chunk = rhs.m_chunk;
-        m_size = rhs.m_size;
-        rhs.m_chunk = nullptr;
+    /**
+     * 
+    */
+    const Object& operator[](int index) const { validateIndex(index); Object* begin = reinterpret_cast<Object*>(m_chunk->begin()); return begin[index]; }
+
+    /**
+     * 
+    */
+    Object& operator[](int index) { validateIndex(index); Object* begin = reinterpret_cast<Object*>(m_chunk->begin()); return begin[index]; }
+
+    /**
+     * 
+    */
+    bool grow(std::uint64_t new_cap) noexcept {
+        const std::uint64_t size = sizeof(Object)*new_cap;
+        if (!new_cap) return false;
+        if (!m_chunk) { m_chunk = m_arena->getChunk(size); m_cap = new_cap; return true; } 
+        else if (size > m_chunk->remainingSpace()) {  m_chunk = m_arena->getChunk(m_chunk->size()*2, m_chunk); m_cap = new_cap; return true; }
+        return false;
     }
 
-    GrowingArray& operator=(GrowingArray&& rhs) {
-        // NOTE: This is exactly the code we have in copy assignment operator,
-        // so we can eliminate that.
-        if (m_chunk)
-            m_arena->releaseChunk(m_chunk);
-        if (rhs.m_chunk) {
-            m_chunk = m_arena->getChunk(rhs.m_chunk->size());
-            m_chunk->copy(rhs.m_chunk);
-            rhs.m_chunk = nullptr;
-        }
-        m_size = rhs.m_size;
-        return *this;
+    /**
+     * 
+    */
+    void push_back(const Object& value) noexcept { grow(1); m_chunk->push(value); m_size += 1; }
+
+    /**
+     * 
+    */
+    void push_back(Object&& value) noexcept { grow(1); m_chunk->push(std::move(value)); m_size += 1; }
+
+    /**
+     * 
+    */
+    const Object& back() const { validateIndex(m_size - 1); Object* data = reinterpret_cast<Object*>(m_chunk->begin()); return data[m_size-1]; }
+
+    /**
+     * 
+    */
+    const Object& front() const { validateIndex(0); Object* data = reinterpret_cast<Object*>(m_chunk->begin()); return data[0]; }
+
+    /**
+     * 
+    */
+    void pop_back() { validateIndex(m_size - 1); m_chunk->pop(sizeof(Object)); m_size -= 1; }
+
+    /**
+     * 
+    */
+    std::size_t size() const noexcept { return m_size; } 
+
+    /**
+     * 
+    */
+    std::size_t capacity() const noexcept { return m_cap; }
+
+    /**
+     * 
+    */
+    bool empty() const noexcept { return m_size == 0; }
+
+    /**
+     * 
+    */
+    std::size_t max_size() const noexcept { return m_cap - m_size; }
+
+    /**
+     * 
+    */
+    void clear() noexcept { if (m_chunk) { m_chunk->reset(); } m_size = 0; }
+
+    /**
+     *
+    */
+    const_iterator begin() const { 
+        if (m_chunk) return const_iterator(reinterpret_cast<Object*>(m_chunk->begin()));
+        return const_iterator(); 
     }
 
-    const Object& operator[](int idx) const { 
-        // pull out into a separate function.
-        if (idx < 0 || idx >= m_size) 
-            throw std::out_of_range(fmt::format("index {} is out of range", idx));
+    /**
+     * 
+    */
+    const_iterator end() const { 
+        if (m_chunk) const_iterator(reinterpret_cast<Object*>(m_chunk->end()));
+        return const_iterator(); 
     }
 
-    Object& operator[](int idx) { 
-        if (idx < 0 || idx >= m_size) 
-            throw std::out_of_range(fmt::format("index {} is out of range", idx));
+    /**
+     * 
+    */
+    iterator begin() { 
+        if (m_chunk) return iterator(reinterpret_cast<Object*>(m_chunk->begin()));
+        return iterator(); 
     }
 
-    void push_back(const Object& obj) {
-        // resize changes the size to fit (N) elements and copies the previous elements.
-        std::uint64_t obj_size = sizeof(obj); // this should be computed inside resize, reserve
-        if (!m_chunk)
-            m_chunk = m_arena->getChunk(obj_size);
-        else if (obj_size > m_chunk->remainingSpace())
-            m_chunk = m_arena->getChunk(m_chunk->size()*2, m_chunk);
-        m_chunk->push(obj);
-        m_size += 1;
+    /**
+     * 
+    */
+    iterator end() { 
+        if (m_chunk) return iterator(reinterpret_cast<Object*>(m_chunk->end()));
+        return iterator(); 
     }
 
-    void push_back(Object&& obj) {
-        std::uint64_t obj_size = sizeof(obj);
-        if (!m_chunk)
-            m_chunk = m_arena->getChunk(obj_size);
-        else if (obj_size > m_chunk->remainingSpace())
-            m_chunk = m_arena->getChunk(m_chunk->size()*2, m_chunk);
-        m_chunk->push(std::move(obj));
-        m_size += 1;
-    }
-
-    const Object& back() const {
+    /**
+     * 
+    */
+    iterator insert(const_iterator pos, const Object& value) {
 
     }
 
-    const Object& front() const {
-
+    /**
+     * 
+    */
+    template<class ...Args>
+    iterator emplace(const_iterator pos, Args&&...args) {
+        return insert(pos, Object(std::forward<Args>(args)...));
     }
-
-    void pop_back() {
-
-    }
-
-    std::size_t size() const { return m_size; } 
 
 #if 0
     iterator erase(iterator pos);
@@ -208,229 +219,75 @@ public:
         m_size += count;
         return at;
     }
-
-    template<class ...Args>
-    iterator emplace(const_iterator pos, Args&&...args)
-    {
-        return insert(pos, Object(std::forward<Args>(args)...));
-    } 
-
-    // TODO: Implement
-    void flush(GrowingArray& other);
 #endif
 
-    // void clear();
-    // size_t size() const { return m_size; }
-    // size_t capacity() const { return m_cap; }
-    // bool empty() const { return m_size == 0; }
-    // size_t left() const { return m_cap - m_size; }
-
 private:
+    void validateIndex(int index) const {
+        if ((!m_chunk) || (index < 0 || index >= m_size)) 
+            throw std::out_of_range(fmt::format("index {} is out of range", index));
+    }
+
+    void init(const GrowingArray& rhs) noexcept {
+        if (this == &rhs) return *this;
+        if (m_chunk) m_arena->releaseChunk(m_chunk);
+        if (rhs.m_chunk) {
+            m_chunk = m_arena->getChunk(rhs.m_chunk->size());
+            m_chunk->copy(rhs.m_chunk);
+            m_size = rhs.m_size;
+        }
+    }
+
     Arena*      m_arena;
     Chunk*      m_chunk;
     std::size_t m_size;
-    std::size_t m_cap; // Has to be computed based on (chunk->size() / sizeof(Object)) 
+    std::size_t m_cap;
+};
+
+template<typename Object>
+class GrowingArray<Object>::const_iterator {
+public:
+    const_iterator() : m_object(nullptr) {}
+    
+    const Object& operator*() const            { validate(); return static_cast<const Object&>(*m_object); }
+    const_iterator& operator++()               { validate(); m_object++; return *this; }
+    const_iterator operator++(int /*postfix*/) { const_iterator old_this = *this; ++(*this); return old_this; }
+    const_iterator operator--()                { validate(); m_object--; return *this; }
+    const_iterator operator--(int /*postfix*/) { const_iterator old_this = *this; --(*this); return old_this; }
+
+    bool operator==(const const_iterator& rhs) const noexcept { return (m_object == rhs.m_object); }
+    bool operator!=(const const_iterator& rhs) const noexcept { return !(*this == rhs); }
+
+protected:
+    friend class GrowingArray<Object>;
+    void validate() const { if (!m_object) throw detail::invalid_iterator_error("invalid iterator"); }
+    const_iterator(Object* object) 
+    : m_object(object) {}
+
+    Object* m_object;
+    // For validation (not used yet)
+    // Chunk** m_chunkp;
+    // Chunk* m_old_chunk;
+};
+
+template<class Object>
+class GrowingArray<Object>::iterator : public const_iterator {
+public:
+    iterator() {}
+
+    Object& operator*()                  { return const_cast<Object&>(const_iterator::operator*()); }
+    const Object& operator*() const      { return const_iterator::operator*(); }
+    iterator& operator++()               { const_iterator::validate(); const_iterator::m_object++; return *this; }
+    iterator operator++(int /*postfix*/) { iterator old_this = *this; ++(*this); return old_this; }
+    iterator& operator--()               { const_iterator::validate(); const_iterator::m_object--; return *this; }
+    iterator operator--(int /*postfix*/) { iterator old_this = *this; --(*this); return old_this; }
+
+protected:
+    friend class GrowingArray<Object>;
+
+    iterator(Object* object) : const_iterator(object) {}
 };
 
 #if 0
-/*************************************************************************
-* Experimenting with const_iterator and iterator begin classes rather than pointers.
-* Once the implementation is stable, all iterators inside GrowingArray will be replaced 
-* with custom ConstIterator and Iterator classes.
-* But for now they are not in use anywhere!!!
-*************************************************************************/
-template<class Object>
-class GrowingArray<Object>::ConstIterator
-{
-public:
-    ConstIterator operator++()
-    {
-        assert(m_at + 1 <= end());
-        ++m_at;
-        return *this;
-    }
-
-    ConstIterator operator++(int unused_)
-    {
-        assert(m_at + 1 <= end());
-        auto res = *this;
-        ++(*this);
-        return res;
-    }
-
-    // ConstIterator operat[]
-
-    const Object& operator*()
-    {
-        assert(m_at >= begin() && m_at < end()); 
-        return *m_at;
-    }
-
-protected:
-    Object *m_at;
-    // TODO: Maintain a flag
-    // bool is_valid;
-    // friend class GrowingArray<Object>;
-};
-
-template<class Object>
-class GrowingArray<Object>::Iterator : public ConstIterator
-{
-public:
-};
-
-/*************************************************************************/
-
-template<class Object>
-GrowingArray<Object>::GrowingArray()
-{}
-
-template<class Object>
-GrowingArray<Object>::GrowingArray(size_t cap)
-: m_cap(cap) 
-{ m_data = alloc_memory(cap); }
-
-template<class Object>
-GrowingArray<Object>::GrowingArray(std::initializer_list<Object> list)
-{
-    for (const auto& item : list)
-        push_back(item);
-}
-
-template<class Object>
-GrowingArray<Object>::~GrowingArray()
-{ free_memory(m_data); }
-
-template<class Object>
-GrowingArray<Object>::GrowingArray(const GrowingArray<Object>& rhs)
-: m_size(rhs.m_size),
-m_cap(rhs.m_cap)
-{
-    m_data = alloc_memory(rhs.m_cap);
-    memcpy(m_data, rhs.m_data, rhs.m_size*sizeof(Object));
-}
-
-template<class Object>
-GrowingArray<Object>& GrowingArray<Object>::operator=(const GrowingArray<Object>& rhs) {
-    if (this == &rhs) return *this;
-    Object* data = alloc_memory(rhs.m_cap);
-    memcpy(data, rhs.m_data, rhs.m_size*sizeof(Object));
-    Object* tmp = m_data;
-    m_size = rhs.m_size;
-    m_cap = rhs.m_cap;
-    m_data = data;
-    free_memory(tmp);
-    return *this;
-}
-
-template<class Object>
-void GrowingArray<Object>::zeroMembers() {
-    m_size = m_cap = 0; 
-    m_data = nullptr;
-}
-
-template<class Object>
-GrowingArray<Object>::GrowingArray(GrowingArray&& rhs)
-: m_size(rhs.m_size), 
-m_cap(rhs.m_cap),
-m_data(rhs.m_data)
-{ rhs.zeroMembers(); }
-
-template<class Object>
-GrowingArray<Object>& GrowingArray<Object>::operator=(GrowingArray&& rhs) {
-    if (this == &rhs) return *this;
-    Object* tmp = m_data;
-    m_size = rhs.m_size;
-    m_cap = rhs.m_cap;
-    m_data = rhs.m_data;
-    rhs.zeroMembers();
-    free_memory(tmp);
-    return *this;
-}
-
-template<class Object>
-Object* GrowingArray<Object>::alloc_memory(size_t count) {
-    size_t alloc_size = count*sizeof(Object);
-#ifdef _WIN32
-    void *memory = VirtualAlloc(0, alloc_size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-#else
-    void* memory = malloc(alloc_size);
-    memset(memory, 0, alloc_size);
-#endif
-    return static_cast<Object*>(memory);
-}
-
-template<class Object>
-void GrowingArray<Object>::free_memory(Object *memory) {
-#ifdef _WIN32
-    VirtualFree((LPVOID)memory, 0, MEM_RELEASE);
-#else
-    free(memory);  
-#endif 
-    zeroMembers(); 
-}
-
-template<class Object>
-void GrowingArray<Object>::push_back(const Object& obj) {
-    if (shouldGrow(1)) {
-        auto cap = ml_max(16, m_cap << 2); 
-        grow(cap);
-    }
-    m_data[m_size++] = obj;
-}
-
-template<class Object>
-void GrowingArray<Object>::push_back(Object&& obj) {
-    if (shouldGrow(1)) {
-        auto cap = ml_max(16, m_cap << 2);
-        grow(cap);
-    }
-    m_data[m_size++] = std::move(obj);
-}
-
-template<class Object>
-const Object& GrowingArray<Object>::back() const {
-    assert(m_size > 0);
-    return m_data[m_size - 1];
-}
-
-template<class Object>
-const Object& GrowingArray<Object>::front() const {
-    assert(m_size > 0);
-    return m_data[0];
-}
-
-template<class Object>
-void GrowingArray<Object>::pop_back() {
-    assert(m_size > 0);
-    Object* start = (m_data + m_size - 1); 
-    memset(start, 0, sizeof(Object));
-    m_size--;
-}
-
-template<class Object>
-bool GrowingArray<Object>::grow(size_t cap)
-{
-    if (cap <= m_cap)
-        return false;
-    for(; (cap & (cap - 1)) != 0; cap++); 
-    Object* data = alloc_memory(cap);
-    if (m_data != nullptr)
-        memcpy(data, m_data, m_size*sizeof(Object));
-    free_memory(m_data);
-    m_data = data;
-    m_cap = cap;
-    return true;
-}
-
-template<class Object>
-void GrowingArray<Object>::clear()
-{
-    if (m_size > 0)
-        memset(m_data, 0, m_size*sizeof(Object));
-    m_size = 0;
-}
-
 template<class Object>
 GrowingArray<Object>::iterator GrowingArray<Object>::erase(iterator pos) 
 {
