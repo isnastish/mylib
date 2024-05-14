@@ -60,3 +60,24 @@ TEST_F(ArrayFixture, Create) {
     ASSERT_EQ(str_arr.size(), 0);
     ASSERT_EQ(str_arr.max_size(), CAP);
 }
+
+// Throws an exception! TODO: Debug!
+TEST_F(ArrayFixture, Iterators) {
+#if 0
+    mylib::GrowingArray<std::string> arr(&m_arena);
+    constexpr std::uint64_t SIZE = 1024;
+    for (std::int32_t i = 0; i < SIZE/2; i++) {
+        arr.push_back(fmt::format("string_{}", i));
+    }
+#endif
+    constexpr std::int32_t SIZE = 10;
+    mylib::GrowingArray<std::string> arr(&m_arena);
+    arr.grow(SIZE);
+    for (std::int32_t i = 0; i < SIZE; i++) {
+        arr.push_back(fmt::format("string_{}", (i+1)<<2));
+    }
+    
+    for (auto itr = arr.begin(); itr != arr.end(); itr++) {
+        fmt::print("element: {}", *itr);
+    }
+}

@@ -82,12 +82,20 @@ public:
     /**
      * 
     */
-    const Object& operator[](int index) const { validateIndex(index); Object* begin = reinterpret_cast<Object*>(m_chunk->begin()); return begin[index]; }
+    const Object& operator[](int index) const { 
+        isValid(index); 
+        Object* begin = reinterpret_cast<Object*>(m_chunk->begin());
+        return begin[index];
+    }
 
     /**
      * 
     */
-    Object& operator[](int index) { validateIndex(index); Object* begin = reinterpret_cast<Object*>(m_chunk->begin()); return begin[index]; }
+    Object& operator[](int index) { 
+        isValid(index);
+        Object* begin = reinterpret_cast<Object*>(m_chunk->begin()); 
+        return begin[index]; 
+    }
 
     /**
      * 
@@ -113,17 +121,17 @@ public:
     /**
      * 
     */
-    const Object& back() const { validateIndex(m_size - 1); Object* data = reinterpret_cast<Object*>(m_chunk->begin()); return data[m_size-1]; }
+    const Object& back() const { isValid(m_size - 1); Object* data = reinterpret_cast<Object*>(m_chunk->begin()); return data[m_size-1]; }
 
     /**
      * 
     */
-    const Object& front() const { validateIndex(0); Object* data = reinterpret_cast<Object*>(m_chunk->begin()); return data[0]; }
+    const Object& front() const { isValid(0); Object* data = reinterpret_cast<Object*>(m_chunk->begin()); return data[0]; }
 
     /**
      * 
     */
-    void pop_back() { validateIndex(m_size - 1); m_chunk->pop(sizeof(Object)); m_size -= 1; }
+    void pop_back() { isValid(m_size - 1); m_chunk->pop(sizeof(Object)); m_size -= 1; }
 
     /**
      * 
@@ -153,40 +161,108 @@ public:
     /**
      *
     */
-    const_iterator begin() const { 
-        if (m_chunk) return const_iterator(reinterpret_cast<Object*>(m_chunk->begin()));
+    const_iterator begin() const noexcept { 
+        auto res = getDataRange();
+        if (res.has_value()) {
+            Range range = res.values();
+            return const_iterator(range.first, range.first, range.one_past_last, &m_chunk);
+        }
         return const_iterator(); 
+    }
+
+    /**
+     *
+    */
+    const_iterator end() const noexcept {
+        auto res = getDataRange();
+        if (res.has_value()) {
+            auto& range = res.values();
+            return const_iterator(range.one_past_last, range.first, range.one_past_last, &m_chunk);
+        }
+        return const_iterator();
+    }
+
+    /**
+     *
+    */
+    iterator begin() noexcept {
+        auto res = getDataRange();
+        if (res.has_value()) {
+            auto& range = res.value();
+            return iterator(range.first, range.first, range.one_past_last, &m_chunk);
+        }
+        return iterator();
     }
 
     /**
      * 
     */
-    const_iterator end() const { 
-        if (m_chunk) const_iterator(reinterpret_cast<Object*>(m_chunk->end()));
-        return const_iterator(); 
-    }
-
-    /**
-     * 
-    */
-    iterator begin() { 
-        if (m_chunk) return iterator(reinterpret_cast<Object*>(m_chunk->begin()));
+    iterator end() noexcept { 
+        auto res = getDataRange();
+        if (res.has_value()) {
+            auto& range = res.value();
+            return iterator(range.one_past_last, range.first, range.one_past_last, &m_chunk);
+        }
         return iterator(); 
     }
 
     /**
      * 
     */
-    iterator end() { 
-        if (m_chunk) return iterator(reinterpret_cast<Object*>(m_chunk->end()));
-        return iterator(); 
+    const_iterator cbegin() const noexcept {
+        return begin();
     }
 
     /**
      * 
+    */
+    const_iterator cend() const noexcept { 
+        return end();
+    }   
+
+    /**
+     * Insert an element before the position pos. pos can be an end() iterator, 
+     * in that case the element will be insert at the end().
+     * Only the iterators and references before the insertion point remain valid.
     */
     iterator insert(const_iterator pos, const Object& value) {
+        // NOTE: Pos iterator is invalidated.
+        const Object* where_ptr = pos.m_object;
+        if (where_ptr < m_chunk->begin() || where_ptr > m_chunk->end())
+            throw std::out_of_range("iterator is out of range");
 
+        for (auto itr = end(); 
+            itr != pos; 
+            itr--) {
+                *itr = *(itr - 1);
+        }
+
+        pos.m_invalid = true;
+        *where_ptr = value;
+        
+        Object* last =  reinterpret_cast<Object*>(m_chunk->end());
+        return iterator(where_ptr, last);
+    }
+
+    /**
+     * 
+    */
+    iterator insert(const_iterator pos, Object&& value) {
+        // NOTE: Pos iterator is invalidated.
+        const Object* where_ptr = pos.m_object;
+        if (where_ptr < m_chunk->begin() || where_ptr > m_chunk->end())
+            throw std::out_of_range("iterator is out of range");
+
+        for (auto itr = end(); 
+            itr != pos; 
+            itr--) {
+                *itr = *(itr - 1);
+        }
+
+        pos.m_invalid = true;
+        *where_ptr = std::move(value);
+        Object* last =  reinterpret_cast<Object*>(m_chunk->end());
+        return iterator(where_ptr, last);
     }
 
     /**
@@ -222,9 +298,25 @@ public:
 #endif
 
 private:
-    void validateIndex(int index) const {
-        if ((!m_chunk) || (index < 0 || index >= m_size)) 
-            throw std::out_of_range(fmt::format("index {} is out of range", index));
+    struct Range {
+        Object* first;
+        Object* one_past_last;
+    };
+
+    std::optional<Range> getDataRange() {
+        if (m_chunk) {
+            Object* first = reinterpret_cast<Object*>(m_chunk->begin());
+            Object* one_past_last = reinterpret_cast<Object*>(m_chunk->end());
+            return {Range{first, one_past_last}};
+        }
+        return {};
+    }
+
+    void isValid(int index) const {
+        // If m_chunk is nullptr, the array is empty
+        if (m_chunk == nullptr) throw std::out_of_range("");
+        // The array is non-empty but an index is out of range
+        if (index < 0 || index >= m_size) throw std::out_of_range(fmt::format("index {} is out of range", index));
     }
 
     void init(const GrowingArray& rhs) noexcept {
@@ -245,46 +337,182 @@ private:
 
 template<typename Object>
 class GrowingArray<Object>::const_iterator {
+    enum class Op;
 public:
-    const_iterator() : m_object(nullptr) {}
-    
-    const Object& operator*() const            { validate(); return static_cast<const Object&>(*m_object); }
-    const_iterator& operator++()               { validate(); m_object++; return *this; }
-    const_iterator operator++(int /*postfix*/) { const_iterator old_this = *this; ++(*this); return old_this; }
-    const_iterator operator--()                { validate(); m_object--; return *this; }
-    const_iterator operator--(int /*postfix*/) { const_iterator old_this = *this; --(*this); return old_this; }
+    const_iterator() noexcept 
+    {}
 
-    bool operator==(const const_iterator& rhs) const noexcept { return (m_object == rhs.m_object); }
-    bool operator!=(const const_iterator& rhs) const noexcept { return !(*this == rhs); }
+    const_iterator operator+(int count) const {
+        isValid(Op::INCREMENT, count);
+        return const_iterator(m_cur + count);
+    }   
+
+    const_iterator operator-(int count) const {
+        isValid(Op::DECREMENT, count);
+        return const_iterator(m_cur - count);
+    }
+
+    const_iterator& operator+=(int count) {
+        isValid(Op::INCREMENT, count);
+        m_cur += count;
+        return *this;
+    }
+    
+    const_iterator& operator-=(int count) {
+        // count can be 0
+        isValid(Op::DECREMENT, count);
+        m_cur -= count;
+        return *this;
+    }
+
+    const Object& operator*() const {
+        isValid();
+        return static_cast<const Object&>(*m_cur); 
+    }
+
+    const_iterator& operator++() {
+        isValid();
+        m_cur++;
+        return *this;
+    }
+
+    const_iterator operator++(int /*postfix*/) { 
+        const_iterator old_this = *this; 
+        ++(*this);
+        return old_this; 
+    }
+
+    const_iterator operator--() { 
+        isValid(Op::DECREMENT);
+        m_cur--; 
+        return *this; 
+    }
+
+    const_iterator operator--(int /*postfix*/) { 
+        const_iterator old_this = *this;
+        --(*this);
+        return old_this; 
+    }
+
+    bool operator==(const const_iterator& rhs) const noexcept {
+        // Iterators might point to an empty collection
+        return (m_cur == rhs.m_cur); 
+    }
+
+    bool operator!=(const const_iterator& rhs) const noexcept { 
+        // Iterators might point to an empty collection
+        return !(*this == rhs); 
+    }
 
 protected:
-    friend class GrowingArray<Object>;
-    void validate() const { if (!m_object) throw detail::invalid_iterator_error("invalid iterator"); }
-    const_iterator(Object* object) 
-    : m_object(object) {}
+    enum class Op : std::int32_t {
+        INCREMENT,
+        DECREMENT,
+    };
 
-    Object* m_object;
-    // For validation (not used yet)
-    // Chunk** m_chunkp;
-    // Chunk* m_old_chunk;
+    friend class GrowingArray<Object>;
+
+    void isValid(Op op=Op::INCREMENT, int count=1) const {
+        // The collection is empty.
+        if (m_cur == nullptr) throw std::out_of_range("");
+        // Iterator was marked as invalid after erase or insert call.
+        if (m_invalid) throw detail::invalid_iterator_error("");
+        // Memory was reallocated, and thus all iterators became invalid
+        if (*m_chunk_ptr != m_old_chunk) throw detail::invalid_iterator_error("");
+        // Cannot increment end() iterator, but can be equal to end() iterator.
+        if ((op == Op::INCREMENT) && ((m_cur + count) > m_one_past_last)) throw std::out_of_range("");
+        // Cannot decrement begin() iterator, but can be equal to begin() iterator.
+        if ((op == Op::DECREMENT) && ((m_cur - count) < m_first)) throw std::out_of_range("");
+    }
+
+    const_iterator(Object* cur, Object* first, Object* last, Chunk** chunk_ptr)
+    : m_cur(cur), 
+    m_first(first), 
+    m_one_past_last(last), 
+    m_chunk_ptr(chunk_ptr), 
+    m_old_chunk(*chunk_ptr)
+    {}
+
+    bool    m_invalid       = false;
+    Object* m_cur           = nullptr;
+    Object* m_first         = nullptr;
+    Object* m_one_past_last = nullptr;
+    Chunk** m_chunk_ptr     = nullptr;
+    Chunk* m_old_chunk      = nullptr;
 };
 
 template<class Object>
-class GrowingArray<Object>::iterator : public const_iterator {
+class GrowingArray<Object>::iterator : public const_iterator { // is-a
 public:
-    iterator() {}
+    iterator() noexcept {}
 
-    Object& operator*()                  { return const_cast<Object&>(const_iterator::operator*()); }
-    const Object& operator*() const      { return const_iterator::operator*(); }
-    iterator& operator++()               { const_iterator::validate(); const_iterator::m_object++; return *this; }
-    iterator operator++(int /*postfix*/) { iterator old_this = *this; ++(*this); return old_this; }
-    iterator& operator--()               { const_iterator::validate(); const_iterator::m_object--; return *this; }
-    iterator operator--(int /*postfix*/) { iterator old_this = *this; --(*this); return old_this; }
+    Object& operator*() { 
+        return const_cast<Object&>(const_iterator::operator*()); 
+    }
+
+    const Object& operator*() const { 
+        return const_iterator::operator*(); 
+    }
+
+    iterator& operator++() {
+        const_iterator::isValid();
+        const_iterator::m_cur++; 
+        return *this; 
+    }
+
+    iterator operator++(int /*postfix*/) { 
+        iterator old_this = *this; 
+        ++(*this); 
+        return old_this; 
+    }
+
+    iterator& operator--() { 
+        const_iterator::isValid(); 
+        const_iterator::m_cur--; 
+        return *this; 
+    }
+
+    iterator operator--(int /*postfix*/) { 
+        iterator old_this = *this; 
+        --(*this); 
+        return old_this; 
+    }
+    
+    iterator operator+(int count) const {
+        const_iterator::isValid(const_iterator::Op::INCREMENT, count);
+        return iterator(
+            const_iterator::m_cur + count, 
+            const_iterator::m_first, 
+            const_iterator::m_one_past_last,
+            const_iterator::m_chunk_ptr); 
+    }
+
+    iterator operator-(int count) const {
+        const_iterator::isValid(const_iterator::Op::DECREMENT, count);
+        return iterator(
+            const_iterator::m_cur + count,
+            const_iterator::m_first,
+            const_iterator::m_one_past_last,
+            const_iterator::m_chunk_ptr);
+    }
+
+    iterator& operator+=(int count) {
+        const_iterator::isValid(const_iterator::Op::INCREMENT, count);
+        const_iterator::m_cur += count;
+        return *this;
+    }
+
+    iterator& operator-=(int count) {
+        const_iterator::isValid(const_iterator::Op::DECREMENT, count);
+        const_iterator::m_cur -= count;
+        return *this;
+    }
 
 protected:
     friend class GrowingArray<Object>;
 
-    iterator(Object* object) : const_iterator(object) {}
+    iterator(Object* cur, Object* first, Object* one_past_last, Chunk** chunk_ptr) noexcept  
+    : const_iterator(cur, first, one_past_last, chunk_ptr) {}
 };
 
 #if 0
