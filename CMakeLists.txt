@@ -6,8 +6,8 @@ project("mylib")
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-add_subdirectory("./ext/googletest/")
-add_subdirectory("./ext/fmt/")
+add_subdirectory("./external/googletest/")
+add_subdirectory("./external/fmt/")
 
 add_library(
     mylib
